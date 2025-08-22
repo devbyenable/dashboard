@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Cluster Route</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    :root{ --primary:#024a18; --accent:#336633; --light:#E8F4E5; }
+    body{margin:0;font-family:system-ui,Arial;background:var(--light)}
+    header{background:var(--primary);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:12px}
+    header a{color:#fff;text-decoration:none;background:#2d6a3f;padding:6px 10px;border-radius:6px}
+    #map{height:75vh}
+    #panel{background:#fff;padding:12px}
+    .metric{display:inline-block;margin-right:16px}
+    .metric b{color:#024a18}
+  </style>
+</head>
+<body>
+<header>
+  <h3 style="margin:0">Cluster Route</h3>
+  <div style="flex:1"></div>
+  <a href="index.html">← Back</a>
+</header>
+
+<div id="map"></div>
+<div id="panel">
+  <div id="summary"></div>
+  <small style="color:#666">*คลิกเส้นทางเพื่อดูระยะทางย่อย</small>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script>
+/* ====== ตั้งค่า URL CSV จาก Google Sheet ====== */
+const SHEET_PLOTS_CSV = '<<ลิงก์ CSV plots เหมือนหน้าแรก>>';
+const SHEET_ROADS_CSV = '<<ลิงก์ CSV roads (ถ้ามี) เหมือนหน้าแรก>>';
+
+let map, clusterId, plots=[], biochar=null, lines=[], totalKm=0;
+
+function getParam(name){
+  const u=new URL(location.href);
+  return u.searchParams.get(name);
+}
+
+function csvToArray(url){
+  return new Promise((resolve,reject)=>{
+    Papa.parse(url,{download:true,header:true,dynamicTyping:true,
+      complete:r=>resolve(r.data.filter(x=>Object.keys(x).length>1)),
+      error:err=>reject(err)
+    });
+  });
+}
+
+async function init(){
+  clusterId = getParam('cluster_id');
+  if(!clusterId){ alert('ไม่พบ cluster_id'); location.href='index.html'; return; }
+
+  map = L.map('map').setView([19.2,99.56], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+
+  const [plotsRows,roadsRows] = await Promise.all([
+    csvToArray(SHEET_PLOTS_CSV),
+    SHEET_ROADS_CSV.startsWith('http')? csvToArray(SHEET_ROADS_CSV) : Promise.resolve([])
+  ]);
+
+  const all = plotsRows.map(r=>({
+    plot_id:String(r.plot_id||'').trim(),
+    lat:Number(r.lat), lng:Number(r.lng),
+    carbon:Number(r.carbon||0),
+    cluster_id:String(r.cluster_id||'').trim(),
+    is_biochar:String(r.is_biochar||'').toUpperCase()==='TRUE'
+  }));
+
+  biochar = all.find(p=>p.is_biochar) || null;
+  plots = all.filter(p=>p.cluster_id===clusterId && !p.is_biochar);
+
+  if(!plots.length){ alert('คลัสเตอร์นี้ไม่มีแปลง'); return; }
+
+  // hub (centroid) ของคลัสเตอร์นี้
+  const fc = turf.featureCollection(plots.map(p=>turf.point([p.lng,p.lat])));
+  const hubCoord = turf.centroid(fc).geometry.coordinates; // [lng,lat]
+  const hubLatLng = [hubCoord[1],hubCoord[0]];
+  const hubMarker = L.marker(hubLatLng, {title:'Hub'}).addTo(map).bindPopup('Hub (centroid)');
+
+  // main road point: ใช้จากตาราง roads ถ้ามี / ไม่มีก็ OSRM nearest
+  let mainRoad = null;
+  const roadRow = roadsRows.find(r=>String(r.cluster_id||'').trim()===clusterId);
+  if(roadRow && roadRow.road_lat && roadRow.road_lng){
+    mainRoad = [Number(roadRow.road_lat), Number(roadRow.road_lng)];
+  }else{
+    try{
+      const res = await fetch(`https://router.project-osrm.org/nearest/v1/driving/${hubCoord[0]},${hubCoord[1]}`);
+      const json = await res.json();
+      if(json.code==='Ok' && json.waypoints?.length) mainRoad=[json.waypoints[0].location[1], json.waypoints[0].location[0]];
+    }catch(e){}
+  }
+  if(mainRoad){
+    L.circleMarker(mainRoad,{radius:6,color:'#ff7f0e',fillColor:'#ff7f0e',fillOpacity:1})
+      .addTo(map).bindPopup('Main road access');
+  }
+
+  // วาด: 1) Biochar → Main road
+  if(biochar && mainRoad){
+    await drawRoutedOrStraight([biochar.lat,biochar.lng], mainRoad, '#0077ff', 'Biochar → Main road');
+  }
+
+  // วาด: 2) Main road → Hub
+  if(mainRoad){
+    await drawRoutedOrStraight(mainRoad, hubLatLng, '#07bd5c', 'Main road → Hub');
+  }
+
+  // วาด: 3) Hub → plot (เส้นตรง)
+  for(const p of plots){
+    const km = turf.distance(turf.point([hubCoord[0],hubCoord[1]]), turf.point([p.lng,p.lat]), {units:'kilometers'});
+    const line = L.polyline([hubLatLng,[p.lat,p.lng]], {color:'#e06a00',weight:2, dashArray:'3,6'})
+      .addTo(map).bindPopup(`Hub → ${p.plot_id}<br>ระยะทาง: ${km.toFixed(2)} กม.`);
+    lines.push(line); totalKm += km;
+    L.marker([p.lat,p.lng]).addTo(map).bindTooltip(p.plot_id);
+  }
+
+  // zoom
+  const bounds = L.latLngBounds(plots.map(p=>[p.lat,p.lng]));
+  bounds.extend(hubLatLng);
+  if(biochar) bounds.extend([biochar.lat,biochar.lng]);
+  if(mainRoad) bounds.extend(mainRoad);
+  map.fitBounds(bounds.pad(0.2));
+
+  // สรุประยะรวม
+  document.getElementById('summary').innerHTML =
+    `<span class="metric">Cluster: <b>${clusterId}</b></span>
+     <span class="metric">Plots: <b>${plots.length}</b></span>
+     <span class="metric">Total distance (km): <b>${totalKm.toFixed(2)}</b></span>`;
+}
+
+async function drawRoutedOrStraight(aLatLng, bLatLng, color, label){
+  // ลองขอเส้นทางจริงจาก OSRM
+  try{
+    const url = `https://router.project-osrm.org/route/v1/driving/${aLatLng[1]},${aLatLng[0]};${bLatLng[1]},${bLatLng[0]}?overview=full&geometries=geojson`;
+    const res = await fetch(url); const json = await res.json();
+    if(json.code==='Ok' && json.routes?.length){
+      const distKm = json.routes[0].distance/1000;
+      const coords = json.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+      const line = L.polyline(coords,{color,weight:4}).addTo(map)
+        .bindPopup(`${label}<br>ระยะทาง: ${distKm.toFixed(2)} กม.`);
+      lines.push(line); totalKm += distKm; return;
+    }
+  }catch(e){}
+  // ถ้าไม่มีถนน → เส้นตรง
+  const km = turf.distance(turf.point([aLatLng[1],aLatLng[0]]), turf.point([bLatLng[1],bLatLng[0]]), {units:'kilometers'});
+  const line = L.polyline([aLatLng,bLatLng], {color, weight:3, dashArray:'6,6'})
+    .addTo(map).bindPopup(`${label}<br>ระยะทาง (เส้นตรง): ${km.toFixed(2)} กม.`);
+  lines.push(line); totalKm += km;
+}
+
+init();
+</script>
+</body>
+</html>
