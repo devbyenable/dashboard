@@ -4,7 +4,12 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Cluster Focus Route (Hub = Centroid | Plots = Pins)</title>
+
+  <!-- Leaflet core -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <!-- (เตรียมไว้) Leaflet.draw ถ้าจะให้วาดพื้นที่/เส้นในอนาคต -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
   <style>
     :root{--left:#b6e89e}
     *{box-sizing:border-box}
@@ -50,10 +55,7 @@
     <div class="legend">
       <div class="lgrow"><span class="dot red"></span><div>Starting point & End point</div></div>
       <div class="lgrow"><span class="dot blue"></span><div>Parking point - for EV truck</div></div>
-      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub - for small vehicle</div></div>
-      <div style="margin-top:6px;font-size:13px;color:#444">
-       
-      </div>
+      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub (centroid) & Plot links</div></div>
     </div>
 
     <div style="margin-top:14px;font-weight:700">Real‑time of small vehicle</div>
@@ -64,8 +66,12 @@
   </aside>
 </main>
 
+<!-- libs -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<!-- Leaflet.draw (เตรียมไว้; ถ้ายังไม่ใช้คอมเมนต์ทิ้งได้) -->
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+
 <script>
 /* =======================
    CONFIG
@@ -132,8 +138,45 @@ async function osrmRoute(profile, from, to){
 
 /* ====== Map ====== */
 const map = L.map('map').setView([data.centroid.lat, data.centroid.lng], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
 
+/* ---- Base layers เหมือนหน้า index ---- */
+// OSM Streets
+const osmStreets = L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { attribution:'© OpenStreetMap contributors' }
+);
+// Esri Satellite (World Imagery)
+const esriSatellite = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { attribution:'Imagery © Esri, Maxar, Earthstar Geographics, GIS User Community' }
+);
+// Esri transparent labels
+const esriLabels = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+  { attribution:'Labels © Esri', opacity:0.9 }
+);
+
+// ค่าเริ่มต้น: Satellite + Labels
+esriSatellite.addTo(map);
+esriLabels.addTo(map);
+
+// สลับชั้นแผนที่
+L.control.layers(
+  { 'OSM Streets': osmStreets, 'Esri Satellite': esriSatellite },
+  { 'Labels (Esri)': esriLabels },
+  { collapsed:true }
+).addTo(map);
+
+// (เตรียม) กลุ่มเลเยอร์สำหรับวาด (ถ้าจะเปิดใช้ ให้เอาคอมเมนต์ drawControl ด้านล่างออก)
+const drawnLayer = L.featureGroup().addTo(map);
+// const drawControl = new L.Control.Draw({
+//   edit: { featureGroup: drawnLayer },
+//   draw: { polygon:true, polyline:true, rectangle:true, circle:false, marker:true }
+// });
+// map.addControl(drawControl);
+// map.on(L.Draw.Event.CREATED, function (e) { drawnLayer.addLayer(e.layer); });
+
+/* ---- Icons ---- */
 const redIcon  = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#e11d48;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #e11d48"></span>', iconSize:[16,16]});
 const blueIcon = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#1d4ed8;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #1d4ed8"></span>', iconSize:[16,16]});
 const hubIcon  = L.divIcon({className:'', html:'<span style="display:inline-block;width:18px;height:18px;background:#f59e0b;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #f59e0b"></span>', iconSize:[18,18]});
@@ -169,7 +212,7 @@ const hubIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   L.polyline([[parking.lat,parking.lng], [centroid.lat,centroid.lng]], {color:'#f59e0b',weight:4,opacity:0.95})
     .addTo(map).bindPopup(`Direct: Parking → Hub<br/>${fmt(pk2hubKm,2)} km`);
 
-  // Hub → Plot (pin) เส้นตรง และ Plot ใช้ Leaflet pin เหมือนหน้า index
+  // Hub → Plot (pin) เส้นตรง และ Plot ใช้ Leaflet pin
   let smallKm = pk2hubKm;   // one‑way to Hub
   let boundsPts = [...r1.coords, ...r2.coords, [plant.lat,plant.lng],[endPoint.lat,endPoint.lng],[parking.lat,parking.lng],[centroid.lat,centroid.lng]];
   for(const p of data.plots){
