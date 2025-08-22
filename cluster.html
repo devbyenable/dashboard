@@ -153,12 +153,12 @@ const hubIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   // 2) Plant → Parking (ถนนจริง ถ้าได้)
   const r1 = await osrmRoute('driving', plant, parking);
   L.polyline(r1.coords, {color:'#1d4ed8',weight:5,opacity:0.95}).addTo(map)
-    .bindPopup(`EV truck: Start → Parking<br/>${fmt(r1.km,2)} กม. (${r1.by})`);
+    .bindPopup(`EV truck: Start → Parking<br/>${fmt(r1.km,2)} km (${r1.by})`);
 
   // 3) Parking → End (ถนนจริง ถ้าได้)
   const r2 = await osrmRoute('driving', parking, {lat:endPoint.lat,lng:endPoint.lng});
   L.polyline(r2.coords, {color:'#1d4ed8',weight:5,opacity:0.95,dashArray:'8,6'}).addTo(map)
-    .bindPopup(`EV truck: Parking → End<br/>${fmt(r2.km,2)} กม. (${r2.by})`);
+    .bindPopup(`EV truck: Parking → End<br/>${fmt(r2.km,2)} km (${r2.by})`);
 
   // 4) วาง HUB (centroid) และเส้นย่อยตรง ๆ
   L.marker([centroid.lat,centroid.lng], {icon:hubIcon}).addTo(map)
@@ -167,7 +167,7 @@ const hubIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   // Parking → Hub (เส้นตรง)
   const pk2hubKm = km(parking, centroid);
   L.polyline([[parking.lat,parking.lng], [centroid.lat,centroid.lng]], {color:'#f59e0b',weight:4,opacity:0.95})
-    .addTo(map).bindPopup(`Direct: Parking → Hub<br/>${fmt(pk2hubKm,2)} กม.`);
+    .addTo(map).bindPopup(`Direct: Parking → Hub<br/>${fmt(pk2hubKm,2)} km`);
 
   // Hub → Plot (pin) เส้นตรง และ Plot ใช้ Leaflet pin เหมือนหน้า index
   let smallKm = pk2hubKm;   // one‑way to Hub
@@ -178,7 +178,7 @@ const hubIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
     smallKm += dist * 2;
     // เส้นตรง Hub → Plot
     L.polyline([[centroid.lat,centroid.lng],[p.lat,p.lng]], {color:'#ffa726',weight:3,opacity:0.9})
-      .addTo(map).bindPopup(`Direct: Hub → ${p.plot_id}<br/>ไป‑กลับ ~ ${fmt(dist*2,2)} กม.`);
+      .addTo(map).bindPopup(`Direct: Hub → ${p.plot_id}<br/>ไป‑กลับ ~ ${fmt(dist*2,2)} km`);
     // หมุด Plot
     L.marker([p.lat,p.lng]).addTo(map)
       .bindPopup(`<b>${p.plot_id}</b><br/>loading time: ${LOAD_MIN_PER_STOP} min`);
