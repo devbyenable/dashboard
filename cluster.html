@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Cluster Focus Route (Parking direct to Subs)</title>
+  <title>Cluster Focus Route (Hub = Centroid | Plots = Pins)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <style>
     :root{--left:#b6e89e}
@@ -29,7 +29,7 @@
   </style>
 </head>
 <body>
-<header>หน้า Map → สมนึกถึงคลม Cluster <span id="clusterTitle"></span> (Parking → Sub เป็นเส้นตรง)</header>
+<header>หน้า Map → โฟกัส Cluster <span id="clusterTitle"></span> (Plots = Pins, Hub = Centroid)</header>
 
 <main class="layout">
   <!-- LEFT KPIs -->
@@ -48,9 +48,12 @@
   <!-- RIGHT: legend & realtime -->
   <aside>
     <div class="legend">
-      <div class="lgrow"><span class="dot red"></span><div>Starting point<br/>และ End point</div></div>
+      <div class="lgrow"><span class="dot red"></span><div>Starting point & End point</div></div>
       <div class="lgrow"><span class="dot blue"></span><div>Parking point (snap บนถนน)</div></div>
-      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub (แต่ละ Plot)</div></div>
+      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub = centroid ของ cluster</div></div>
+      <div style="margin-top:6px;font-size:13px;color:#444">
+        เส้นย่อยเป็นเส้นตรง: <b>Parking→Hub</b> และ <b>Hub→Plot</b>
+      </div>
     </div>
 
     <div style="margin-top:14px;font-weight:700">Real‑time of small vehicle</div>
@@ -67,12 +70,12 @@
 /* =======================
    CONFIG
    ======================= */
-const TRUCK_SPEED_KMH   = 35;   // สำหรับประเมินเวลาเมื่อ OSRM ไม่คืน duration
-const WALK_SPEED_KMH    = 4;    // สำหรับคิดเวลาเดิน (แม้จะวาดเส้นตรง)
+const TRUCK_SPEED_KMH   = 35;   // fallback เมื่อ OSRM ไม่ส่ง duration
+const WALK_SPEED_KMH    = 4;    // สำหรับคิดเวลา small vehicle (แม้เป็นเส้นตรง)
 const LOAD_MIN_PER_STOP = 6;
 const SMALL_CAP_TON     = 2;
 
-/* ====== Read payload from localStorage (จาก index.html) ======= */
+/* ====== รับ payload จาก index.html (localStorage) ======= */
 const payload = JSON.parse(localStorage.getItem('selectedCluster')||'null');
 
 /* ====== Fallback demo ====== */
@@ -127,61 +130,57 @@ async function osrmRoute(profile, from, to){
   return {coords:[[from.lat,from.lng],[to.lat,to.lng]], km:distKm, hr: distKm/TRUCK_SPEED_KMH, by:'direct'};
 }
 
-/* ====== เลือก Parking: snap บนถนน & ใกล้ Sub มากสุด ====== */
-async function pickBestParking(subs, centroid){
-  const candidates = [centroid, ...subs.slice(0,8).map(s=>({lat:s.lat,lng:s.lng}))];
-  let best = null, bestScore = Infinity;
-
-  for(const c of candidates){
-    const snapped = await osrmNearest(c.lat, c.lng);
-    const score = subs.reduce((s,p)=>s+km(snapped,{lat:p.lat,lng:p.lng}),0)/subs.length;
-    if(score < bestScore){ bestScore = score; best = snapped; }
-  }
-  return best;
-}
-
 /* ====== Map ====== */
 const map = L.map('map').setView([data.centroid.lat, data.centroid.lng], 15);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
 
 const redIcon  = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#e11d48;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #e11d48"></span>', iconSize:[16,16]});
 const blueIcon = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#1d4ed8;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #1d4ed8"></span>', iconSize:[16,16]});
-const orgIcon  = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#f59e0b;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #f59e0b"></span>', iconSize:[16,16]});
+const hubIcon  = L.divIcon({className:'', html:'<span style="display:inline-block;width:18px;height:18px;background:#f59e0b;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #f59e0b"></span>', iconSize:[18,18]});
 
 /* ====== วาดทั้งหมด ====== */
 (async ()=>{
-  // Mark start & end
+  // Start & End
   const plant = {lat:data.plant.lat, lng:data.plant.lng};
-  const centroid = {lat:data.centroid.lat, lng:data.centroid.lng};
+  const centroid = {lat:data.centroid.lat, lng:data.centroid.lng}; // HUB
   L.marker([plant.lat,plant.lng], {icon:redIcon}).addTo(map).bindPopup(`<b>${data.plant.plot_id}</b><br/>Start`);
   L.marker([endPoint.lat,endPoint.lng], {icon:redIcon}).addTo(map).bindPopup(`<b>${endPoint.plot_id||'End point'}</b><br/>End`);
 
-  // 1) เลือก Parking (บนถนน + ใกล้ Sub มากสุด)
-  const subs = data.plots.map(p=>({lat:p.lat,lng:p.lng,id:p.plot_id}));
-  const parking = await pickBestParking(subs, centroid);
+  // 1) เลือก Parking (snap บนถนน & ใกล้ Hub มากที่สุด)
+  const parking = await osrmNearest(centroid.lat, centroid.lng);
   L.marker([parking.lat,parking.lng], {icon:blueIcon}).addTo(map).bindPopup(`<b>Parking (on road)</b>`);
 
-  // 2) Plant → Parking (ถนนจริง)
+  // 2) Plant → Parking (ถนนจริง ถ้าได้)
   const r1 = await osrmRoute('driving', plant, parking);
-  const line1 = L.polyline(r1.coords, {color:'#1d4ed8',weight:5,opacity:0.95}).addTo(map)
-                 .bindPopup(`EV truck: Start → Parking<br/>${fmt(r1.km,2)} กม. (${r1.by})`);
+  L.polyline(r1.coords, {color:'#1d4ed8',weight:5,opacity:0.95}).addTo(map)
+    .bindPopup(`EV truck: Start → Parking<br/>${fmt(r1.km,2)} กม. (${r1.by})`);
 
-  // 3) Parking → End (ถนนจริง)
+  // 3) Parking → End (ถนนจริง ถ้าได้)
   const r2 = await osrmRoute('driving', parking, {lat:endPoint.lat,lng:endPoint.lng});
-  const line2 = L.polyline(r2.coords, {color:'#1d4ed8',weight:5,opacity:0.95,dashArray:'8,6'}).addTo(map)
-                 .bindPopup(`EV truck: Parking → End<br/>${fmt(r2.km,2)} กม. (${r2.by})`);
+  L.polyline(r2.coords, {color:'#1d4ed8',weight:5,opacity:0.95,dashArray:'8,6'}).addTo(map)
+    .bindPopup(`EV truck: Parking → End<br/>${fmt(r2.km,2)} กม. (${r2.by})`);
 
-  // 4) Parking → Sub (เส้นตรง ไป‑กลับ)
-  let walkTotalKm = 0;
-  const boundsPts = [...r1.coords, ...r2.coords, [plant.lat,plant.lng], [endPoint.lat,endPoint.lng], [parking.lat,parking.lng]];
+  // 4) วาง HUB (centroid) และเส้นย่อยตรง ๆ
+  L.marker([centroid.lat,centroid.lng], {icon:hubIcon}).addTo(map)
+   .bindPopup(`<b>Sub‑logistic hub</b><br/>Centroid of cluster`);
+
+  // Parking → Hub (เส้นตรง)
+  const pk2hubKm = km(parking, centroid);
+  L.polyline([[parking.lat,parking.lng], [centroid.lat,centroid.lng]], {color:'#f59e0b',weight:4,opacity:0.95})
+    .addTo(map).bindPopup(`Direct: Parking → Hub<br/>${fmt(pk2hubKm,2)} กม.`);
+
+  // Hub → Plot (pin) เส้นตรง และ Plot ใช้ Leaflet pin เหมือนหน้า index
+  let smallKm = pk2hubKm;   // one‑way to Hub
+  let boundsPts = [...r1.coords, ...r2.coords, [plant.lat,plant.lng],[endPoint.lat,endPoint.lng],[parking.lat,parking.lng],[centroid.lat,centroid.lng]];
   for(const p of data.plots){
-    // คำนวณระยะตรง
-    const dist = km(parking, {lat:p.lat,lng:p.lng});
-    walkTotalKm += dist * 2; // ไป-กลับ
-    // วาดเส้นตรง
-    L.polyline([[parking.lat,parking.lng],[p.lat,p.lng]], {color:'#f59e0b',weight:4,opacity:0.9}).addTo(map)
-      .bindPopup(`Direct: Parking → ${p.plot_id}<br/>ไป‑กลับ ~ ${fmt(dist*2,2)} กม.`);
-    L.marker([p.lat,p.lng], {icon:orgIcon}).addTo(map)
+    const dist = km(centroid, {lat:p.lat,lng:p.lng});
+    // ไป‑กลับจาก Hub เพื่อเก็บ/ส่ง (คิด 2 เท่า)
+    smallKm += dist * 2;
+    // เส้นตรง Hub → Plot
+    L.polyline([[centroid.lat,centroid.lng],[p.lat,p.lng]], {color:'#ffa726',weight:3,opacity:0.9})
+      .addTo(map).bindPopup(`Direct: Hub → ${p.plot_id}<br/>ไป‑กลับ ~ ${fmt(dist*2,2)} กม.`);
+    // หมุด Plot
+    L.marker([p.lat,p.lng]).addTo(map)
       .bindPopup(`<b>${p.plot_id}</b><br/>loading time: ${LOAD_MIN_PER_STOP} min`);
     boundsPts.push([p.lat,p.lng]);
   }
@@ -189,7 +188,7 @@ const orgIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   // KPI รวม
   const truckKm = r1.km + r2.km;
   const truckHr = (r1.hr||r1.km/TRUCK_SPEED_KMH) + (r2.hr||r2.km/TRUCK_SPEED_KMH);
-  const walkHr  = walkTotalKm / WALK_SPEED_KMH;    // ใช้ความเร็วเดินเพื่อประเมินเวลา แม้เป็นเส้นตรง
+  const walkHr  = smallKm / WALK_SPEED_KMH;
   const loadHr  = (data.plots.length * LOAD_MIN_PER_STOP)/60;
   const totalHr = truckHr + walkHr + loadHr;
   const rounds  = Math.max(1, Math.ceil((data.total_residues||0)/SMALL_CAP_TON));
@@ -197,7 +196,7 @@ const orgIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   document.getElementById('kpi_total_time').textContent = fmt(totalHr,2);
   document.getElementById('kpi_total_tons').textContent  = fmt(data.total_residues||0,1);
   document.getElementById('kpi_truck_km').textContent   = fmt(truckKm,2);
-  document.getElementById('kpi_small_km').textContent   = fmt(walkTotalKm,2);
+  document.getElementById('kpi_small_km').textContent   = fmt(smallKm,2);
   document.getElementById('kpi_rounds').textContent     = fmt(rounds);
 
   // Zoom รวม
