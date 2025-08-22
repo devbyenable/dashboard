@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Enable Earth – Clusters</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+  <style>
+    :root{ --primary:#024a18; --accent:#336633; --light:#E8F4E5; }
+    body{margin:0;font-family:system-ui,Arial;background:var(--light)}
+    header{background:var(--primary);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:12px}
+    header img{height:40px}
+    #toolbar{background:var(--primary);padding:10px 16px}
+    #toolbar button{margin-right:8px;padding:8px 12px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}
+    #map{height:75vh}
+    #panel{background:#fff;padding:12px}
+    .cluster-card{border:1px solid #ddd;border-radius:8px;padding:8px 12px;margin:8px 0;display:flex;justify-content:space-between;align-items:center}
+    .cluster-card a{background:var(--primary);color:#fff;text-decoration:none;padding:6px 10px;border-radius:6px}
+    .badge{display:inline-block;background:#024a18;color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;margin-left:6px}
+  </style>
+</head>
+<body>
+<header>
+  <img src="public/logo.jpg" alt="logo">
+  <h2 style="margin:0">Enable Earth – Clusters</h2>
+</header>
+
+<div id="toolbar">
+  <button id="btn-refresh">Reload from Google Sheet</button>
+</div>
+
+<div id="map"></div>
+<div id="panel"><strong>Clusters</strong>
+  <div id="cluster-list"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script>
+/* ====== 1) ตั้งค่า URL CSV จาก Google Sheet (Publish to web → CSV) ====== */
+// ใส่ลิงก์ CSV ของแท็บ plots และ roads
+const SHEET_PLOTS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUiJHnoc7oAWnWLxMuQ6BcFHtTjlDDgOtSfFrIuOryV-2pyDo9k_Bh2U9qqVSjjgLMGHGjkxozx5-f/pub?gid=0&single=true&output=csv';
+const SHEET_ROADS_CSV = '<<ถ้ามี แท็บ roads ใส่ลิงก์ CSV ที่นี่ (ไม่บังคับ)>>';
+
+let map, markerLayer, biocharPoint=null, plots=[], roadsByCluster={};
+
+function initMap(){
+  map = L.map('map').setView([19.2, 99.56], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap'
+  }).addTo(map);
+  loadAll();
+  document.getElementById('btn-refresh').onclick=loadAll;
+}
+
+function loadAll(){
+  Promise.all([
+    csvToArray(SHEET_PLOTS_CSV),
+    SHEET_ROADS_CSV.startsWith('http') ? csvToArray(SHEET_ROADS_CSV) : Promise.resolve([])
+  ]).then(([plotsRows,roadsRows])=>{
+    plots = normalizePlots(plotsRows);
+    roadsByCluster = indexRoads(roadsRows);
+    renderMap();
+    renderClusterList();
+  }).catch(e=>alert('โหลดข้อมูลไม่สำเร็จ: '+e));
+}
+
+function csvToArray(url){
+  return new Promise((resolve,reject)=>{
+    Papa.parse(url,{
+      download:true, header:true, dynamicTyping:true,
+      complete: res => resolve(res.data.filter(r=>Object.keys(r).length>1)),
+      error: err => reject(err)
+    });
+  });
+}
+
+function normalizePlots(rows){
+  const arr=[];
+  rows.forEach(r=>{
+    if(!r.lat || !r.lng) return;
+    arr.push({
+      plot_id: String(r.plot_id||'').trim(),
+      lat: Number(r.lat), lng: Number(r.lng),
+      carbon: Number(r.carbon||0),
+      cluster_id: String(r.cluster_id||'').trim(),
+      is_biochar: String(r.is_biochar||'').toUpperCase()==='TRUE'
+    });
+  });
+  // หา biochar
+  biocharPoint = arr.find(p=>p.is_biochar) || null;
+  return arr.filter(p=>!p.is_biochar);
+}
+
+function indexRoads(rows){
+  const out={};
+  rows.forEach(r=>{
+    const cid = String(r.cluster_id||'').trim();
+    if(!cid || !r.road_lat || !r.road_lng) return;
+    out[cid] = {lat:Number(r.road_lat), lng:Number(r.road_lng)};
+  });
+  return out;
+}
+
+function groupByCluster(){
+  const m=new Map();
+  plots.forEach(p=>{
+    if(!m.has(p.cluster_id)) m.set(p.cluster_id, []);
+    m.get(p.cluster_id).push(p);
+  });
+  return m; // Map(cluster_id -> [plots])
+}
+
+function renderMap(){
+  if(markerLayer) map.removeLayer(markerLayer);
+  markerLayer = L.markerClusterGroup();
+  // วางจุดแปลง
+  plots.forEach(p=>{
+    L.marker([p.lat,p.lng])
+      .bindPopup(`<b>${p.plot_id}</b><br>Cluster: ${p.cluster_id}<br>Residues: ${p.carbon||0} t`)
+      .addTo(markerLayer);
+  });
+  markerLayer.addTo(map);
+
+  // วาง Biochar
+  if(biocharPoint){
+    L.circleMarker([biocharPoint.lat,biocharPoint.lng],{
+      radius:10, color:'#1d3757', fillColor:'#5e8af7', fillOpacity:.95
+    }).addTo(map).bindPopup('<b>Biochar Plant</b>');
+  }
+
+  // ขีดขอบคลัสเตอร์แบบง่าย (centroid + วงกลม)
+  groupByCluster().forEach((list,cid)=>{
+    const fc = turf.featureCollection(list.map(p=>turf.point([p.lng,p.lat])));
+    const center = turf.centroid(fc).geometry.coordinates;
+    L.circle([center[1],center[0]], {radius:800, color:'#024a18', weight:1, fill:false})
+      .addTo(map).bindTooltip(`Cluster ${cid}`,{permanent:false});
+  });
+
+  if(plots.length) {
+    const bounds = L.latLngBounds(plots.map(p=>[p.lat,p.lng]));
+    if(biocharPoint) bounds.extend([biocharPoint.lat,biocharPoint.lng]);
+    map.fitBounds(bounds.pad(0.2));
+  }
+}
+
+function renderClusterList(){
+  const wrap=document.getElementById('cluster-list');
+  wrap.innerHTML='';
+  groupByCluster().forEach((list,cid)=>{
+    const sumCarbon = list.reduce((s,p)=>s+(p.carbon||0),0);
+    const card = document.createElement('div');
+    card.className='cluster-card';
+    card.innerHTML = `
+      <div>
+        <b>Cluster ${cid}</b>
+        <span class="badge">${list.length} plots</span>
+        <div style="font-size:12px;color:#555">Residues: ${sumCarbon.toFixed(2)} t</div>
+      </div>
+      <a href="cluster.html?cluster_id=${encodeURIComponent(cid)}">Open</a>
+    `;
+    wrap.appendChild(card);
+  });
+}
+
+// turf.js สำหรับ centroid
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script>initMap();</script>
+</body>
+</html>
