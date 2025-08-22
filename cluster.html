@@ -1,57 +1,228 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Cluster Focus</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-  <style>
-    body{margin:0;font-family:Arial, sans-serif}
-    header{padding:10px;background:#024a18;color:#fff}
-    #map{height:72vh}
-    .pill{display:inline-block;background:#e6f7ea;border:1px solid #bfe4c8;color:#024a18;padding:6px 10px;border-radius:18px;margin:6px 8px 0 0}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Cluster Focus Route</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+  :root{
+    --primary:#024a18;
+    --soft:#e9f5e9;
+    --pill:#c9efc9;
+    --left:#b6e89e;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;color:#111}
+  header{padding:14px 18px;font-weight:600;color:#e11d48}
+  main{max-width:1320px;margin:0 auto;padding:0 16px 30px}
+  .layout{display:grid;grid-template-columns:260px 1fr 280px;gap:18px}
+  .kbox{
+    background:var(--left);
+    border-radius:26px;
+    padding:20px 14px;
+    text-align:center;
+    margin-bottom:18px;
+  }
+  .kbox h4{margin:0 0 8px;font-size:18px}
+  .kbox .val{font-size:22px;font-weight:700}
+  .legend{
+    background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px
+  }
+  .legend h4{margin:0 0 12px;font-size:18px}
+  .lgrow{display:flex;align-items:center;gap:10px;margin:10px 0}
+  .dot{width:16px;height:16px;border-radius:50%}
+  .dot.red{background:#e11d48}
+  .dot.blue{background:#1d4ed8}
+  .dot.org{background:#f59e0b}
+  #map{height:640px;border-radius:10px;overflow:hidden;position:relative}
+  .note{
+    position:absolute;inset:auto auto 10px 10px;background:rgba(255,255,255,.9);
+    padding:6px 10px;border-radius:8px;font-size:12px;border:1px solid #e5e7eb
+  }
+  .rtcard{
+    background:var(--left);border-radius:26px;padding:20px 14px;text-align:center;margin:14px 0
+  }
+  .rtcard .val{font-size:22px;font-weight:700}
+  .searchbar{margin-top:10px;text-align:center}
+  .searchbar input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;width:220px}
+  @media(max-width:1024px){
+    .layout{grid-template-columns:1fr;gap:12px}
+    #map{height:520px}
+  }
+</style>
 </head>
 <body>
-  <header>
-    <b>Cluster detail</b>
-    <span id="pill-plots" class="pill"></span>
-    <span id="pill-carbon" class="pill"></span>
-    <a href="index.html" style="float:right;color:#fff;text-decoration:none;">← Back</a>
-  </header>
-  <div id="map"></div>
-  <div style="padding:10px" id="list"></div>
+<header>หน้า Map → สมนึกถึงคลม Cluster <span id="clusterTitle"></span> จะ focus route แบบนี้</header>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
-  <script>
-    const payload = JSON.parse(localStorage.getItem('selectedCluster')||'null');
-    if(!payload){ document.body.innerHTML = '<p style="padding:20px">ไม่พบข้อมูลคลัสเตอร์ กรุณากลับไปเลือกจากหน้าแรก</p>'; throw new Error('no data'); }
+<main class="layout">
 
-    const map = L.map('map').setView([payload.centroid.lat, payload.centroid.lng], 15);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(map);
+  <!-- LEFT KPIs -->
+  <aside>
+    <div class="kbox">
+      <h4>Total time (hr)</h4>
+      <div class="val" id="kpi_total_time">X</div>
+    </div>
+    <div class="kbox">
+      <h4>Total wastes available (ton)</h4>
+      <div class="val" id="kpi_total_tons">X</div>
+    </div>
+    <div class="kbox">
+      <h4>Total distance (EV truck) (km)</h4>
+      <div class="val" id="kpi_truck_km">X</div>
+    </div>
+    <div class="kbox">
+      <h4>Total distance (small vehicle) (km)</h4>
+      <div class="val" id="kpi_small_km">X</div>
+    </div>
+    <div class="kbox">
+      <h4>Round trip of small vehicle (no.)</h4>
+      <div class="val" id="kpi_rounds">X</div>
+    </div>
 
-    // centroid (Hub station)
-    const hub = L.marker([payload.centroid.lat, payload.centroid.lng], {
-      icon: L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/684/684908.png', iconSize:[32,32]})
-    }).addTo(map).bindPopup('Hub station (centroid)').openPopup();
+    <div class="searchbar">
+      <input placeholder="Search"/>
+    </div>
+  </aside>
 
-    // plots
-    const group = L.featureGroup().addTo(map);
-    payload.plots.forEach(p=>{
-      const m = L.marker([p.lat, p.lng]).addTo(group).bindPopup(`${p.plot_id}<br>Residues: ${p.carbon}`);
-      // เส้นตรงจาก hub → plot
-      L.polyline([[payload.centroid.lat, payload.centroid.lng],[p.lat,p.lng]], {color:'#e06a00', dashArray:'5,7'}).addTo(group);
-    });
-    map.fitBounds(group.getBounds().pad(0.25));
+  <!-- MAP -->
+  <section style="position:relative">
+    <div id="map"></div>
+    <div class="note">คลิกที่เส้น/จุด เพื่อดูรายละเอียดระยะ/เวลา</div>
+  </section>
 
-    // สรุปด้านบน
-    document.getElementById('pill-plots').textContent = `Plots: ${payload.plots.length}`;
-    document.getElementById('pill-carbon').textContent = `Total residues: ${payload.total_residues.toFixed(2)} ton`;
+  <!-- RIGHT: legend & realtime -->
+  <aside>
+    <div class="legend">
+      <div class="lgrow"><span class="dot red"></span> <div>Starting point and<br/>End point</div></div>
+      <div class="lgrow"><span class="dot blue"></span> <div>Parking point - for<br/>EV truck</div></div>
+      <div class="lgrow"><span class="dot org"></span> <div>Sub‑logistic hub -<br/>for small vehicle</div></div>
+    </div>
 
-    // รายการ
-    const ul = payload.plots.map(p=>`<li>${p.plot_id} — ${p.carbon} ton</li>`).join('');
-    document.getElementById('list').innerHTML = `<h3>Members</h3><ul>${ul}</ul>`;
-  </script>
+    <div style="margin-top:14px;font-weight:700">Real‑time of small vehicle</div>
+    <div class="rtcard"><div>Payload remained (kg)</div><div class="val" id="rt_payload">X</div></div>
+    <div class="rtcard"><div>Speed (km/hr)</div><div class="val" id="rt_speed">X</div></div>
+    <div class="rtcard"><div>Battery remained (hr)</div><div class="val" id="rt_batt">X</div></div>
+    <div class="rtcard"><div>Elevation (%)</div><div class="val" id="rt_elev">X</div></div>
+  </aside>
+
+</main>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script>
+/* =======================
+   CONFIG / ASSUMPTIONS
+   ======================= */
+const TRUCK_SPEED_KMH = 35;         // ความเร็วรถใหญ่
+const SMALL_SPEED_KMH = 20;         // ความเร็ทรถเล็ก
+const LOAD_MIN_PER_STOP = 6;        // เวลารอโหลดต่อจุด (นาที)
+const SMALL_CAP_TON = 2;            // ความจุรถเล็ก (ตัน/เที่ยว)
+
+/* ====== Read payload from localStorage (จาก index.html) ======= */
+const payload = JSON.parse(localStorage.getItem('selectedCluster')||'null');
+
+/* ====== Fallback demo เมื่อไม่มี payload ====== */
+const demo = {
+  cluster_id: 'A',
+  centroid: {lat:19.1839, lng:99.5654},
+  plant: {lat:19.22956, lng:99.490782, plot_id:'Biochar Plant'},
+  plots: [
+    {plot_id:'MJD001', lat:19.18492, lng:99.56857, carbon:4.1},
+    {plot_id:'MJD002', lat:19.18308, lng:99.56974, carbon:3.9},
+    {plot_id:'MJD003', lat:19.18147, lng:99.56686, carbon:4.4},
+    {plot_id:'MJD004', lat:19.18441, lng:99.56497, carbon:3.6},
+    {plot_id:'MJD005', lat:19.18251, lng:99.56358, carbon:4.2}
+  ],
+  total_residues: 20.2
+};
+const data = payload || demo;
+
+/* ====== Helpers ====== */
+function km(a,b){
+  return turf.distance(turf.point([a.lng,a.lat]), turf.point([b.lng,b.lat]), {units:'kilometers'});
+}
+function fmt(n,dec=0){
+  return Number(n).toLocaleString(undefined,{minimumFractionDigits:dec,maximumFractionDigits:dec});
+}
+
+/* ====== Map init ====== */
+document.getElementById('clusterTitle').textContent = `Cluster ${data.cluster_id}`;
+const map = L.map('map').setView([data.centroid.lat, data.centroid.lng], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+
+/* Icons */
+const redIcon = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#e11d48;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #e11d48"></span>', iconSize:[16,16]});
+const blueIcon= L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#1d4ed8;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #1d4ed8"></span>', iconSize:[16,16]});
+const orgIcon = L.divIcon({className:'', html:'<span style="display:inline-block;width:16px;height:16px;background:#f59e0b;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #f59e0b"></span>', iconSize:[16,16]});
+
+/* Markers */
+const plantLatLng = {lat:data.plant.lat, lng:data.plant.lng};
+L.marker([plantLatLng.lat, plantLatLng.lng], {icon:redIcon})
+  .addTo(map).bindPopup(`<b>${data.plant.plot_id}</b><br/>Start / End`);
+
+const hubLatLng = {lat:data.centroid.lat, lng:data.centroid.lng};
+L.marker([hubLatLng.lat, hubLatLng.lng], {icon:blueIcon})
+  .addTo(map).bindPopup(`<b>Parking point</b><br/>Hub centroid`);
+
+/* Route: Truck Plant ↔ Hub (เส้นน้ำเงิน) */
+const truckDistOneWay = km(plantLatLng, hubLatLng);
+const truckDistRound  = truckDistOneWay * 2;
+const truckTimeHr     = truckDistRound / TRUCK_SPEED_KMH;
+
+const truckLine = L.polyline([[plantLatLng.lat, plantLatLng.lng],[hubLatLng.lat, hubLatLng.lng]],
+  {color:'#1d4ed8',weight:5,opacity:0.8}).addTo(map)
+  .bindPopup(`EV truck: Plant ↔ Hub<br/>ระยะทาง (ไปอย่างเดียว) ${fmt(truckDistOneWay,2)} กม.`);
+
+/* Small vehicle routes: Hub → each Plot (เส้นส้ม, คิดไป‑กลับ) */
+let smallDistKm = 0;
+data.plots.forEach(p=>{
+  const dOne = km(hubLatLng, {lat:p.lat,lng:p.lng});
+  smallDistKm += dOne*2; // ไป‑กลับ
+  const line = L.polyline([[hubLatLng.lat,hubLatLng.lng],[p.lat,p.lng]], {color:'#f59e0b',weight:4,opacity:0.85})
+    .addTo(map)
+    .bindPopup(`Hub → ${p.plot_id}<br/>ไป‑กลับ ${fmt(dOne*2,2)} กม.`);
+  // จุดส้ม + label loading time
+  L.marker([p.lat,p.lng], {icon:orgIcon})
+    .addTo(map)
+    .bindPopup(`<b>${p.plot_id}</b><br/>loading time: ${LOAD_MIN_PER_STOP} min`);
+  // text label “loading time: x min”
+  L.tooltip({permanent:true,offset:[0,-18],direction:'top',className:'ltip'})
+    .setContent(`loading time: ${LOAD_MIN_PER_STOP} min`)
+    .setLatLng([p.lat,p.lng])
+    .addTo(map);
+});
+
+/* เวลาเดินทางของ small vehicle */
+const smallDriveHr = smallDistKm / SMALL_SPEED_KMH;
+const loadStopsMin = data.plots.length * LOAD_MIN_PER_STOP;
+const totalTimeHr  = truckTimeHr + smallDriveHr + (loadStopsMin/60);
+
+/* จำนวนรอบรถเล็ก (ประมาณจากความจุ) */
+const rounds = Math.max(1, Math.ceil((data.total_residues||0)/SMALL_CAP_TON));
+
+/* ==== KPI render ==== */
+document.getElementById('kpi_total_time').textContent = fmt(totalTimeHr,2);
+document.getElementById('kpi_total_tons').textContent = fmt(data.total_residues||0,1);
+document.getElementById('kpi_truck_km').textContent  = fmt(truckDistRound,2);
+document.getElementById('kpi_small_km').textContent  = fmt(smallDistKm,2);
+document.getElementById('kpi_rounds').textContent    = fmt(rounds);
+
+/* Fit bounds */
+const allPts = [[plantLatLng.lat,plantLatLng.lng],[hubLatLng.lat,hubLatLng.lng], ...data.plots.map(p=>[p.lat,p.lng])];
+map.fitBounds(L.latLngBounds(allPts), {padding:[20,20]});
+
+/* ===== Real‑time mock ===== */
+function rand(a,b){return (Math.random()*(b-a)+a)}
+function tick(){
+  document.getElementById('rt_payload').textContent = fmt(rand(200, 1200),0);
+  document.getElementById('rt_speed').textContent   = fmt(rand(8, 22),1);
+  document.getElementById('rt_batt').textContent    = fmt(rand(2, 6),1);
+  document.getElementById('rt_elev').textContent    = fmt(rand(0, 9),1);
+}
+tick(); setInterval(tick, 2000);
+</script>
 </body>
 </html>
