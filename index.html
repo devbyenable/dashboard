@@ -9,6 +9,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+  <!-- Leaflet.draw (เตรียมไว้สำหรับการวาดพื้นที่ในอนาคต) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
 
   <style>
     :root{--primary:#024a18;--accent:#2f7d32;--muted:#e9f3ea}
@@ -88,7 +90,7 @@
       <div class="head">Cluster screening table</div>
       <div class="body" style="padding:0">
         <div class="muted" style="padding:8px 12px">
-          <!--Rules (ตัวอย่าง): <b>if &lt; 10 rai → no go</b>, <b>if &lt; 5 tons → no go</b>, <b>if &gt; 30 km → no go</b>, <b>if &gt; 500 THB/ton → no go</b>, <b>if emission &gt; Y → no go</b>-->
+          <!-- กฎการตัดสินใจ ใส่คำอธิบายได้ตามต้องการ -->
         </div>
         <table id="tbl">
           <thead>
@@ -111,14 +113,14 @@
     </section>
   </main>
 
-  <!-- <footer>Built with Leaflet + Chart.js | Data source: Google Sheets (CSV)</footer> -->
-
   <!-- libs -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+  <!-- Leaflet.draw (เตรียมไว้; ถ้ายังไม่ใช้สามารถคอมเมนต์สองบรรทัดนี้ได้) -->
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
   <script>
   /*
@@ -175,6 +177,7 @@
   // ======= STATE =======
   let map, markerCluster, barChart;
   let ALL_PLOTS = []; // ให้ฟังก์ชันอื่นอ้างได้
+  let drawnLayer;     // สำหรับวาดพื้นที่ในอนาคต
 
   // --------- utils ----------
   function km(a,b){
@@ -265,13 +268,52 @@
   // --------- map ----------
   function initMap(plots){
     map = L.map('map').setView([19.2, 99.56], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-    markerCluster = L.markerClusterGroup(); 
 
-  
-      
-    
-    // add biochar plant first
+    // ====== Base maps (ฟรี) ======
+    const osmStreets = L.tileLayer(
+      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { attribution:'© OpenStreetMap contributors' }
+    );
+
+    // ภาพดาวเทียม Esri World Imagery (ฟรีสำหรับการใช้งานทั่วไป + ใส่ Attribution)
+    const esriSatellite = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { attribution:'Imagery © Esri, Maxar, Earthstar Geographics, GIS User Community' }
+    );
+
+    // Labels โปร่งใสสำหรับซ้อนบนภาพดาวเทียม
+    const esriLabels = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      { attribution:'Labels © Esri', opacity:0.9 }
+    );
+
+    // ค่าเริ่มต้น: Satellite + Labels
+    esriSatellite.addTo(map);
+    esriLabels.addTo(map);
+
+    // กล่องสลับแผนที่
+    L.control.layers(
+      { 'OSM Streets': osmStreets, 'Esri Satellite': esriSatellite },
+      { 'Labels (Esri)': esriLabels },
+      { collapsed:true }
+    ).addTo(map);
+
+    // ====== (เตรียม) กลุ่มชั้นสำหรับวาดพื้นที่ในอนาคต ======
+    drawnLayer = L.featureGroup().addTo(map);
+    // ถ้าจะเปิดปุ่มวาด ให้เอาคอมเมนต์ด้านล่างออก
+    // const drawControl = new L.Control.Draw({
+    //   edit: { featureGroup: drawnLayer },
+    //   draw: { polygon:true, polyline:true, rectangle:true, circle:false, marker:true }
+    // });
+    // map.addControl(drawControl);
+    // map.on(L.Draw.Event.CREATED, function (e) {
+    //   drawnLayer.addLayer(e.layer);
+    // });
+
+    // ====== MarkerCluster เดิม ======
+    markerCluster = L.markerClusterGroup();
+
+    // Biochar Plant
     const plant = plots.find(p=>p.is_biochar);
     if(plant){
       L.marker([plant.lat,plant.lng],{
@@ -279,12 +321,15 @@
         icon:L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/684/684908.png',iconSize:[30,30]})
       }).addTo(map).bindPopup('<b>Biochar Plant</b>');
     }
-    // normal plots
+
+    // plots ปกติ
     plots.filter(p=>!p.is_biochar).forEach(p=>{
-      const m = L.marker([p.lat,p.lng]).bindPopup(`<b>${p.plot_id}</b><br/>Cluster: ${p.cluster_id}<br/>Residues: ${fmt(p.carbon,1)} ton`);
+      const m = L.marker([p.lat,p.lng])
+        .bindPopup(`<b>${p.plot_id}</b><br/>Cluster: ${p.cluster_id}<br/>Residues: ${fmt(p.carbon,1)} ton`);
       markerCluster.addLayer(m);
     });
     map.addLayer(markerCluster);
+
     if(markerCluster.getLayers().length){
       map.fitBounds(markerCluster.getBounds(),{padding:[20,20]});
     }
@@ -299,6 +344,8 @@
     });
     return {plant, clusters};
   }
+
+  function fmtNum(n,dec=0){ return fmt(n,dec); }
 
   function fillDecisionTable(plots){
     const {plant, clusters} = groupByCluster(plots);
@@ -326,7 +373,7 @@
       const costTHBperTon = (distKm * COST_THB_PER_KM) / Math.max(1,totalTons);
       const emission = distKm * EMISSION_KG_PER_KM; // kgCO2e
 
-      // decision rules (เหมือนข้อความในรูป)
+      // decision rules (ตัวอย่าง)
       const rules = [];
       if(totalFields < 10) rules.push('fields < 10 rai');
       if(totalTons < 5) rules.push('tons < 5');
@@ -350,14 +397,14 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><b>Cluster ${cid}</b></td>
-        <td>${fmt(totalFields)}</td>
-        <td>${fmt(totalTons,1)}</td>
-        <td>${fmt(distKm,2)}</td>
-        <td>${fmt(timeToClusterHr,2)}</td>
-        <td>${fmt(timeSpentHr,2)}</td>
-        <td>${fmt(energyKWh,2)}</td>
-        <td>${fmt(costTHBperTon,2)}</td>
-        <td>${fmt(emission,2)}</td>
+        <td>${fmtNum(totalFields)}</td>
+        <td>${fmtNum(totalTons,1)}</td>
+        <td>${fmtNum(distKm,2)}</td>
+        <td>${fmtNum(timeToClusterHr,2)}</td>
+        <td>${fmtNum(timeSpentHr,2)}</td>
+        <td>${fmtNum(energyKWh,2)}</td>
+        <td>${fmtNum(costTHBperTon,2)}</td>
+        <td>${fmtNum(emission,2)}</td>
         <td>${decisionCellHTML}</td>
       `;
       tbody.appendChild(tr);
