@@ -1,104 +1,56 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Cluster Focus Route</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-  :root{
-    --primary:#024a18;
-    --soft:#e9f5e9;
-    --pill:#c9efc9;
-    --left:#b6e89e;
-  }
-  *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;color:#111}
-  header{padding:14px 18px;font-weight:600;color:#e11d48}
-  main{max-width:1320px;margin:0 auto;padding:0 16px 30px}
-  .layout{display:grid;grid-template-columns:260px 1fr 280px;gap:18px}
-  .kbox{
-    background:var(--left);
-    border-radius:26px;
-    padding:20px 14px;
-    text-align:center;
-    margin-bottom:18px;
-  }
-  .kbox h4{margin:0 0 8px;font-size:18px}
-  .kbox .val{font-size:22px;font-weight:700}
-  .legend{
-    background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px
-  }
-  .legend h4{margin:0 0 12px;font-size:18px}
-  .lgrow{display:flex;align-items:center;gap:10px;margin:10px 0}
-  .dot{width:16px;height:16px;border-radius:50%}
-  .dot.red{background:#e11d48}
-  .dot.blue{background:#1d4ed8}
-  .dot.org{background:#f59e0b}
-  #map{height:640px;border-radius:10px;overflow:hidden;position:relative}
-  .note{
-    position:absolute;inset:auto auto 10px 10px;background:rgba(255,255,255,.9);
-    padding:6px 10px;border-radius:8px;font-size:12px;border:1px solid #e5e7eb
-  }
-  .rtcard{
-    background:var(--left);border-radius:26px;padding:20px 14px;text-align:center;margin:14px 0
-  }
-  .rtcard .val{font-size:22px;font-weight:700}
-  .searchbar{margin-top:10px;text-align:center}
-  .searchbar input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;width:220px}
-  @media(max-width:1024px){
-    .layout{grid-template-columns:1fr;gap:12px}
-    #map{height:520px}
-  }
-</style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Cluster Focus Route (Road Routing)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    :root{--left:#b6e89e}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;color:#111}
+    header{padding:14px 18px;font-weight:600;color:#e11d48}
+    main{max-width:1320px;margin:0 auto;padding:0 16px 30px}
+    .layout{display:grid;grid-template-columns:260px 1fr 280px;gap:18px}
+    .kbox{background:var(--left);border-radius:26px;padding:20px 14px;text-align:center;margin-bottom:18px}
+    .kbox h4{margin:0 0 8px;font-size:18px}
+    .kbox .val{font-size:22px;font-weight:700}
+    .legend{background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:16px}
+    .legend h4{margin:0 0 12px;font-size:18px}
+    .lgrow{display:flex;align-items:center;gap:10px;margin:10px 0}
+    .dot{width:16px;height:16px;border-radius:50%}
+    .dot.red{background:#e11d48}.dot.blue{background:#1d4ed8}.dot.org{background:#f59e0b}
+    #map{height:640px;border-radius:10px;overflow:hidden}
+    .rtcard{background:var(--left);border-radius:26px;padding:20px 14px;text-align:center;margin:14px 0}
+    .rtcard .val{font-size:22px;font-weight:700}
+    .searchbar{margin-top:10px;text-align:center}
+    .searchbar input{padding:8px 10px;border:1px solid #e5e7eb;border-radius:10px;width:220px}
+    @media(max-width:1024px){.layout{grid-template-columns:1fr;gap:12px}#map{height:520px}}
+  </style>
 </head>
 <body>
-<header><span id="clusterTitle"></span></header>
+<header>หน้า Map → สมนึกถึงคลม Cluster <span id="clusterTitle"></span> (วิ่งตามถนนจริง)</header>
 
 <main class="layout">
-
   <!-- LEFT KPIs -->
   <aside>
-    <div class="kbox">
-      <h4>Total time (hr)</h4>
-      <div class="val" id="kpi_total_time">X</div>
-    </div>
-    <div class="kbox">
-      <h4>Total wastes available (ton)</h4>
-      <div class="val" id="kpi_total_tons">X</div>
-    </div>
-    <div class="kbox">
-      <h4>Total distance (EV truck) (km)</h4>
-      <div class="val" id="kpi_truck_km">X</div>
-    </div>
-    <div class="kbox">
-      <h4>Total distance (small vehicle) (km)</h4>
-      <div class="val" id="kpi_small_km">X</div>
-    </div>
-    <div class="kbox">
-      <h4>Round trip of small vehicle (no.)</h4>
-      <div class="val" id="kpi_rounds">X</div>
-    </div>
-
-    <div class="searchbar">
-      <input placeholder="Search"/>
-    </div>
+    <div class="kbox"><h4>Total time (hr)</h4><div class="val" id="kpi_total_time">X</div></div>
+    <div class="kbox"><h4>Total wastes available (ton)</h4><div class="val" id="kpi_total_tons">X</div></div>
+    <div class="kbox"><h4>Total distance (EV truck) (km)</h4><div class="val" id="kpi_truck_km">X</div></div>
+    <div class="kbox"><h4>Total distance (small vehicle) (km)</h4><div class="val" id="kpi_small_km">X</div></div>
+    <div class="kbox"><h4>Round trip of small vehicle (no.)</h4><div class="val" id="kpi_rounds">X</div></div>
+    <div class="searchbar"><input placeholder="Search"/></div>
   </aside>
 
   <!-- MAP -->
-  <section style="position:relative">
-    <div id="map"></div>
-    <div class="note">คลิกที่เส้น/จุด เพื่อดูรายละเอียดระยะ/เวลา</div>
-  </section>
+  <section><div id="map"></div></section>
 
   <!-- RIGHT: legend & realtime -->
   <aside>
     <div class="legend">
-      <div class="lgrow"><span class="dot red"></span> <div>Starting point and<br/>End point</div></div>
-      <div class="lgrow"><span class="dot blue"></span> <div>Parking point - for<br/>EV truck</div></div>
-      <div class="lgrow"><span class="dot org"></span> <div>Sub‑logistic hub -<br/>for small vehicle</div></div>
+      <div class="lgrow"><span class="dot red"></span><div>Starting point<br/>และ End point</div></div>
+      <div class="lgrow"><span class="dot blue"></span><div>Parking point (Hub centroid)</div></div>
+      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub (แต่ละ Plot)</div></div>
     </div>
 
     <div style="margin-top:14px;font-weight:700">Real‑time of small vehicle</div>
@@ -107,7 +59,6 @@
     <div class="rtcard"><div>Battery remained (hr)</div><div class="val" id="rt_batt">X</div></div>
     <div class="rtcard"><div>Elevation (%)</div><div class="val" id="rt_elev">X</div></div>
   </aside>
-
 </main>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -116,7 +67,7 @@
 /* =======================
    CONFIG / ASSUMPTIONS
    ======================= */
-const TRUCK_SPEED_KMH = 35;         // ความเร็วรถใหญ่
+const TRUCK_SPEED_KMH = 35;         // ความเร็วรถใหญ่ (ใช้ในกรณี fallback)
 const SMALL_SPEED_KMH = 20;         // ความเร็ทรถเล็ก
 const LOAD_MIN_PER_STOP = 6;        // เวลารอโหลดต่อจุด (นาที)
 const SMALL_CAP_TON = 2;            // ความจุรถเล็ก (ตัน/เที่ยว)
@@ -129,6 +80,7 @@ const demo = {
   cluster_id: 'A',
   centroid: {lat:19.1839, lng:99.5654},
   plant: {lat:19.22956, lng:99.490782, plot_id:'Biochar Plant'},
+  // สามารถใส่ end ต่างจาก plant ได้ เช่น {lat:...,lng:...,plot_id:'Depot'}
   plots: [
     {plot_id:'MJD001', lat:19.18492, lng:99.56857, carbon:4.1},
     {plot_id:'MJD002', lat:19.18308, lng:99.56974, carbon:3.9},
@@ -139,6 +91,7 @@ const demo = {
   total_residues: 20.2
 };
 const data = payload || demo;
+const endPoint = data.end || data.plant; // ถ้าไม่กำหนด end ให้กลับที่ plant
 
 /* ====== Helpers ====== */
 function km(a,b){
@@ -146,6 +99,23 @@ function km(a,b){
 }
 function fmt(n,dec=0){
   return Number(n).toLocaleString(undefined,{minimumFractionDigits:dec,maximumFractionDigits:dec});
+}
+async function routeRoad(from, to){
+  // เรียก OSRM เพื่อให้วิ่งตามถนนจริง; ถ้าล้มเหลวคืนค่าเส้นตรง
+  const url = `https://router.project-osrm.org/route/v1/driving/${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`;
+  try{
+    const res = await fetch(url,{mode:'cors'});
+    const json = await res.json();
+    if(json.code==='Ok' && json.routes && json.routes.length){
+      const r = json.routes[0];
+      const kmRoad = r.distance/1000;
+      const coords = r.geometry.coordinates.map(c=>[c[1],c[0]]);
+      return {km: kmRoad, coords, by:'road'};
+    }
+  }catch(e){}
+  // fallback เส้นตรง
+  const kmDirect = km(from,to);
+  return {km: kmDirect, coords:[[from.lat,from.lng],[to.lat,to.lng]], by:'direct'};
 }
 
 /* ====== Map init ====== */
@@ -160,59 +130,68 @@ const orgIcon = L.divIcon({className:'', html:'<span style="display:inline-block
 
 /* Markers */
 const plantLatLng = {lat:data.plant.lat, lng:data.plant.lng};
-L.marker([plantLatLng.lat, plantLatLng.lng], {icon:redIcon})
-  .addTo(map).bindPopup(`<b>${data.plant.plot_id}</b><br/>Start / End`);
+L.marker([plantLatLng.lat, plantLatLng.lng], {icon:redIcon}).addTo(map).bindPopup(`<b>${data.plant.plot_id}</b><br/>Start`);
 
 const hubLatLng = {lat:data.centroid.lat, lng:data.centroid.lng};
-L.marker([hubLatLng.lat, hubLatLng.lng], {icon:blueIcon})
-  .addTo(map).bindPopup(`<b>Parking point</b><br/>Hub centroid`);
+L.marker([hubLatLng.lat, hubLatLng.lng], {icon:blueIcon}).addTo(map).bindPopup(`<b>Hub (centroid)</b>`);
 
-/* Route: Truck Plant ↔ Hub (เส้นน้ำเงิน) */
-const truckDistOneWay = km(plantLatLng, hubLatLng);
-const truckDistRound  = truckDistOneWay * 2;
-const truckTimeHr     = truckDistRound / TRUCK_SPEED_KMH;
+const endLatLng = {lat:endPoint.lat, lng:endPoint.lng};
+L.marker([endLatLng.lat, endLatLng.lng], {icon:redIcon}).addTo(map).bindPopup(`<b>${endPoint.plot_id||'End point'}</b><br/>End`);
 
-const truckLine = L.polyline([[plantLatLng.lat, plantLatLng.lng],[hubLatLng.lat, hubLatLng.lng]],
-  {color:'#1d4ed8',weight:5,opacity:0.8}).addTo(map)
-  .bindPopup(`EV truck: Plant ↔ Hub<br/>ระยะทาง (ไปอย่างเดียว) ${fmt(truckDistOneWay,2)} กม.`);
-
-/* Small vehicle routes: Hub → each Plot (เส้นส้ม, คิดไป‑กลับ) */
-let smallDistKm = 0;
-data.plots.forEach(p=>{
-  const dOne = km(hubLatLng, {lat:p.lat,lng:p.lng});
-  smallDistKm += dOne*2; // ไป‑กลับ
-  const line = L.polyline([[hubLatLng.lat,hubLatLng.lng],[p.lat,p.lng]], {color:'#f59e0b',weight:4,opacity:0.85})
+/* ===== ROUTING: Road for Plant→Hub and Hub→End ===== */
+(async ()=>{
+  // 1) Plant → Hub (ถนนจริง)
+  const forward = await routeRoad(plantLatLng, hubLatLng);
+  const forwardLine = L.polyline(forward.coords, {color:'#1d4ed8',weight:5,opacity:0.9})
     .addTo(map)
-    .bindPopup(`Hub → ${p.plot_id}<br/>ไป‑กลับ ${fmt(dOne*2,2)} กม.`);
-  // จุดส้ม + label loading time
-  L.marker([p.lat,p.lng], {icon:orgIcon})
+    .bindPopup(`EV truck: Start → Hub<br/>ระยะทาง: ${fmt(forward.km,2)} กม. (${forward.by})`);
+
+  // 2) Hub → End (ถนนจริง)
+  const backward = await routeRoad(hubLatLng, endLatLng);
+  const backLine = L.polyline(backward.coords, {color:'#1d4ed8',weight:5,opacity:0.9,dashArray:'8,6'})
     .addTo(map)
-    .bindPopup(`<b>${p.plot_id}</b><br/>loading time: ${LOAD_MIN_PER_STOP} min`);
-  // text label “loading time: x min”
-  L.tooltip({permanent:true,offset:[0,-18],direction:'top',className:'ltip'})
-    .setContent(`loading time: ${LOAD_MIN_PER_STOP} min`)
-    .setLatLng([p.lat,p.lng])
-    .addTo(map);
-});
+    .bindPopup(`EV truck: Hub → End<br/>ระยะทาง: ${fmt(backward.km,2)} กม. (${backward.by})`);
 
-/* เวลาเดินทางของ small vehicle */
-const smallDriveHr = smallDistKm / SMALL_SPEED_KMH;
-const loadStopsMin = data.plots.length * LOAD_MIN_PER_STOP;
-const totalTimeHr  = truckTimeHr + smallDriveHr + (loadStopsMin/60);
+  // ===== Small vehicle: Hub → แต่ละ Plot (เส้นตรง ตามโจทย์) =====
+  let smallDistKm = 0;
+  data.plots.forEach(p=>{
+    const dOne = km(hubLatLng, {lat:p.lat,lng:p.lng});
+    smallDistKm += dOne*2; // ไป-กลับ
+    L.polyline([[hubLatLng.lat,hubLatLng.lng],[p.lat,p.lng]], {color:'#f59e0b',weight:4,opacity:0.85})
+      .addTo(map)
+      .bindPopup(`Hub → ${p.plot_id}<br/>ไป‑กลับ ${fmt(dOne*2,2)} กม.`);
+    L.marker([p.lat,p.lng], {icon:orgIcon}).addTo(map)
+      .bindPopup(`<b>${p.plot_id}</b><br/>loading time: ${LOAD_MIN_PER_STOP} min`);
+    L.tooltip({permanent:true,offset:[0,-18],direction:'top',className:'ltip'})
+      .setContent(`loading time: ${LOAD_MIN_PER_STOP} min`)
+      .setLatLng([p.lat,p.lng]).addTo(map);
+  });
 
-/* จำนวนรอบรถเล็ก (ประมาณจากความจุ) */
-const rounds = Math.max(1, Math.ceil((data.total_residues||0)/SMALL_CAP_TON));
+  // เวลารวม: ใช้เวลาถนนจริง + small vehicle + loading
+  const truckKmTotal = forward.km + backward.km;
+  const truckTimeHr  = truckKmTotal / TRUCK_SPEED_KMH; // ถ้าอยากใช้เวลาจาก OSRM ต้องอ่าน r.duration/3600 (เพิ่มใน routeRoad)
+  const smallDriveHr = smallDistKm / SMALL_SPEED_KMH;
+  const loadStopsMin = data.plots.length * LOAD_MIN_PER_STOP;
+  const totalTimeHr  = truckTimeHr + smallDriveHr + (loadStopsMin/60);
+  const rounds       = Math.max(1, Math.ceil((data.total_residues||0)/SMALL_CAP_TON));
 
-/* ==== KPI render ==== */
-document.getElementById('kpi_total_time').textContent = fmt(totalTimeHr,2);
-document.getElementById('kpi_total_tons').textContent = fmt(data.total_residues||0,1);
-document.getElementById('kpi_truck_km').textContent  = fmt(truckDistRound,2);
-document.getElementById('kpi_small_km').textContent  = fmt(smallDistKm,2);
-document.getElementById('kpi_rounds').textContent    = fmt(rounds);
+  // KPIs
+  document.getElementById('kpi_total_time').textContent = fmt(totalTimeHr,2);
+  document.getElementById('kpi_total_tons').textContent = fmt(data.total_residues||0,1);
+  document.getElementById('kpi_truck_km').textContent  = fmt(truckKmTotal,2);
+  document.getElementById('kpi_small_km').textContent  = fmt(smallDistKm,2);
+  document.getElementById('kpi_rounds').textContent    = fmt(rounds);
 
-/* Fit bounds */
-const allPts = [[plantLatLng.lat,plantLatLng.lng],[hubLatLng.lat,hubLatLng.lng], ...data.plots.map(p=>[p.lat,p.lng])];
-map.fitBounds(L.latLngBounds(allPts), {padding:[20,20]});
+  // Fit bounds ให้ครอบทั้งเส้นทาง
+  const bounds = L.latLngBounds([
+    ...forward.coords, ...backward.coords,
+    [plantLatLng.lat,plantLatLng.lng],
+    [hubLatLng.lat,hubLatLng.lng],
+    [endLatLng.lat,endLatLng.lng],
+    ...data.plots.map(p=>[p.lat,p.lng])
+  ]);
+  map.fitBounds(bounds, {padding:[20,20]});
+})();
 
 /* ===== Real‑time mock ===== */
 function rand(a,b){return (Math.random()*(b-a)+a)}
