@@ -87,7 +87,7 @@
       <div class="head">Cluster screening table</div>
       <div class="body" style="padding:0">
         <div class="muted" style="padding:8px 12px">
-          Rules (ตัวอย่าง): <b>if &lt; 10 rai → no go</b>, <b>if &lt; 5 tons → no go</b>, <b>if &gt; 30 km → no go</b>, <b>if &gt; 500 THB/ton → no go</b>, <b>if emission &gt; Y → no go</b>
+          //Rules (ตัวอย่าง): <b>if &lt; 10 rai → no go</b>, <b>if &lt; 5 tons → no go</b>, <b>if &gt; 30 km → no go</b>, <b>if &gt; 500 THB/ton → no go</b>, <b>if emission &gt; Y → no go</b>//
         </div>
         <table id="tbl">
           <thead>
@@ -276,7 +276,7 @@
     }
     // normal plots
     plots.filter(p=>!p.is_biochar).forEach(p=>{
-      const m = L.marker([p.lat,p.lng]).bindPopup(`<b>${p.plot_id}</b><br/>Cluster: ${p.cluster_id}<br/>Residues: ${fmt(p.carbon,1)} t`);
+      const m = L.marker([p.lat,p.lng]).bindPopup(`<b>${p.plot_id}</b><br/>Cluster: ${p.cluster_id}<br/>Residues: ${fmt(p.carbon,1)} ton`);
       markerCluster.addLayer(m);
     });
     map.addLayer(markerCluster);
