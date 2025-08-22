@@ -2,173 +2,357 @@
 <html lang="th">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Enable Earth – Clusters</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Enable Earth – Cluster Dashboard</title>
+
+  <!-- Leaflet & MarkerCluster -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+
   <style>
-    :root{ --primary:#024a18; --accent:#336633; --light:#E8F4E5; }
-    body{margin:0;font-family:system-ui,Arial;background:var(--light)}
+    :root{--primary:#024a18;--accent:#2f7d32;--muted:#e9f3ea}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:#fff;color:#1a1a1a}
     header{background:var(--primary);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:12px}
-    header img{height:40px}
-    #toolbar{background:var(--primary);padding:10px 16px}
-    #toolbar button{margin-right:8px;padding:8px 12px;border:0;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer}
-    #map{height:75vh}
-    #panel{background:#fff;padding:12px}
-    .cluster-card{border:1px solid #ddd;border-radius:8px;padding:8px 12px;margin:8px 0;display:flex;justify-content:space-between;align-items:center}
-    .cluster-card a{background:var(--primary);color:#fff;text-decoration:none;padding:6px 10px;border-radius:6px}
-    .badge{display:inline-block;background:#024a18;color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;margin-left:6px}
+    header img{height:42px}
+    header h1{font-size:20px;margin:0;font-weight:600}
+    main{padding:16px;max-width:1280px;margin:0 auto}
+    .row{display:grid;gap:14px}
+    .row.kpi{grid-template-columns:repeat(5,1fr)}
+    .kpi{background:var(--muted);border-radius:16px;padding:14px;text-align:center}
+    .kpi h3{font-size:14px;font-weight:500;margin:0 0 6px}
+    .kpi .val{font-size:22px;font-weight:700}
+    h2.sec{font-size:16px;margin:18px 0 8px;color:#333}
+    .grid-2{display:grid;gap:14px;grid-template-columns:1.1fr 1fr}
+    .card{border:1px solid #e5e7eb;border-radius:12px;background:#fff}
+    .card .head{padding:10px 12px;border-bottom:1px solid #eef2f6;font-weight:600}
+    .card .body{padding:10px 12px}
+    #map{width:100%;height:380px;border-radius:0 0 12px 12px}
+    canvas{width:100%!important;height:360px!important}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-top:1px solid #e6e6e6;border-right:1px solid #f1f1f1;padding:8px 10px;font-size:13px;text-align:center}
+    th:last-child,td:last-child{border-right:none}
+    thead th{background:#fafafa;position:sticky;top:0;z-index:1}
+    .pill{display:inline-block;background:#e8f5e9;color:#1b5e20;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600}
+    .pill.red{background:#ffebee;color:#c62828}
+    .muted{color:#6b7280;font-size:12px}
+    footer{padding:12px 0 40px;color:#6b7280;text-align:center}
+    @media(max-width:980px){
+      .row.kpi{grid-template-columns:repeat(2,1fr)}
+      .grid-2{grid-template-columns:1fr}
+    }
   </style>
 </head>
 <body>
-<header>
-  <img src="public/logo.jpg" alt="logo">
-  <h2 style="margin:0">Enable Earth – Clusters</h2>
-</header>
+  <header>
+    <img src="https://raw.githubusercontent.com/google/material-design-icons/master/png/social/nature_people/materialicons/48dp/2x/outline_nature_people_white_48dp.png" alt="">
+    <h1>Enable Earth – Cluster Dashboard</h1>
+  </header>
 
-<div id="toolbar">
-  <button id="btn-refresh">Reload from Google Sheet</button>
-</div>
+  <main>
+    <!-- KPIs -->
+    <div class="row kpi" id="kpiRow">
+      <div class="kpi"><h3>Agri‑waste collected (ton)</h3><div class="val" id="kpi_waste">X</div></div>
+      <div class="kpi"><h3>Fields (rai)</h3><div class="val" id="kpi_fields">X</div></div>
+      <div class="kpi"><h3>Number of farmers</h3><div class="val" id="kpi_farmers">X</div></div>
+      <div class="kpi"><h3>CO2e prevented (tons)</h3><div class="val" id="kpi_co2e">X</div></div>
+      <div class="kpi"><h3>Time spent (hr/ton)</h3><div class="val" id="kpi_time">X</div><div class="muted">X (Y% increase)</div></div>
+    </div>
 
-<div id="map"></div>
-<div id="panel"><strong>Clusters</strong>
-  <div id="cluster-list"></div>
-</div>
+    <h2 class="sec">Next 30 days</h2>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script>
-/* ====== 1) ตั้งค่า URL CSV จาก Google Sheet (Publish to web → CSV) ====== */
-// ใส่ลิงก์ CSV ของแท็บ plots และ roads
-const SHEET_PLOTS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRUiJHnoc7oAWnWLxMuQ6BcFHtTjlDDgOtSfFrIuOryV-2pyDo9k_Bh2U9qqVSjjgLMGHGjkxozx5-f/pub?gid=0&single=true&output=csv';
-const SHEET_ROADS_CSV = '<<ถ้ามี แท็บ roads ใส่ลิงก์ CSV ที่นี่ (ไม่บังคับ)>>';
+    <div class="grid-2">
+      <!-- Bar chart -->
+      <section class="card">
+        <div class="head">Agri‑waste available for us to go collect (bar chart below)</div>
+        <div class="body">
+          <canvas id="barChart"></canvas>
+        </div>
+      </section>
 
-let map, markerLayer, biocharPoint=null, plots=[], roadsByCluster={};
+      <!-- Map -->
+      <section class="card">
+        <div class="head">Cluster map (click markers for detail)</div>
+        <div class="body" style="padding:0">
+          <div id="map"></div>
+        </div>
+      </section>
+    </div>
 
-function initMap(){
-  map = L.map('map').setView([19.2, 99.56], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'© OpenStreetMap'
-  }).addTo(map);
-  loadAll();
-  document.getElementById('btn-refresh').onclick=loadAll;
-}
-
-function loadAll(){
-  Promise.all([
-    csvToArray(SHEET_PLOTS_CSV),
-    SHEET_ROADS_CSV.startsWith('http') ? csvToArray(SHEET_ROADS_CSV) : Promise.resolve([])
-  ]).then(([plotsRows,roadsRows])=>{
-    plots = normalizePlots(plotsRows);
-    roadsByCluster = indexRoads(roadsRows);
-    renderMap();
-    renderClusterList();
-  }).catch(e=>alert('โหลดข้อมูลไม่สำเร็จ: '+e));
-}
-
-function csvToArray(url){
-  return new Promise((resolve,reject)=>{
-    Papa.parse(url,{
-      download:true, header:true, dynamicTyping:true,
-      complete: res => resolve(res.data.filter(r=>Object.keys(r).length>1)),
-      error: err => reject(err)
-    });
-  });
-}
-
-function normalizePlots(rows){
-  const arr=[];
-  rows.forEach(r=>{
-    if(!r.lat || !r.lng) return;
-    arr.push({
-      plot_id: String(r.plot_id||'').trim(),
-      lat: Number(r.lat), lng: Number(r.lng),
-      carbon: Number(r.carbon||0),
-      cluster_id: String(r.cluster_id||'').trim(),
-      is_biochar: String(r.is_biochar||'').toUpperCase()==='TRUE'
-    });
-  });
-  // หา biochar
-  biocharPoint = arr.find(p=>p.is_biochar) || null;
-  return arr.filter(p=>!p.is_biochar);
-}
-
-function indexRoads(rows){
-  const out={};
-  rows.forEach(r=>{
-    const cid = String(r.cluster_id||'').trim();
-    if(!cid || !r.road_lat || !r.road_lng) return;
-    out[cid] = {lat:Number(r.road_lat), lng:Number(r.road_lng)};
-  });
-  return out;
-}
-
-function groupByCluster(){
-  const m=new Map();
-  plots.forEach(p=>{
-    if(!m.has(p.cluster_id)) m.set(p.cluster_id, []);
-    m.get(p.cluster_id).push(p);
-  });
-  return m; // Map(cluster_id -> [plots])
-}
-
-function renderMap(){
-  if(markerLayer) map.removeLayer(markerLayer);
-  markerLayer = L.markerClusterGroup();
-  // วางจุดแปลง
-  plots.forEach(p=>{
-    L.marker([p.lat,p.lng])
-      .bindPopup(`<b>${p.plot_id}</b><br>Cluster: ${p.cluster_id}<br>Residues: ${p.carbon||0} t`)
-      .addTo(markerLayer);
-  });
-  markerLayer.addTo(map);
-
-  // วาง Biochar
-  if(biocharPoint){
-    L.circleMarker([biocharPoint.lat,biocharPoint.lng],{
-      radius:10, color:'#1d3757', fillColor:'#5e8af7', fillOpacity:.95
-    }).addTo(map).bindPopup('<b>Biochar Plant</b>');
-  }
-
-  // ขีดขอบคลัสเตอร์แบบง่าย (centroid + วงกลม)
-  groupByCluster().forEach((list,cid)=>{
-    const fc = turf.featureCollection(list.map(p=>turf.point([p.lng,p.lat])));
-    const center = turf.centroid(fc).geometry.coordinates;
-    L.circle([center[1],center[0]], {radius:800, color:'#024a18', weight:1, fill:false})
-      .addTo(map).bindTooltip(`Cluster ${cid}`,{permanent:false});
-  });
-
-  if(plots.length) {
-    const bounds = L.latLngBounds(plots.map(p=>[p.lat,p.lng]));
-    if(biocharPoint) bounds.extend([biocharPoint.lat,biocharPoint.lng]);
-    map.fitBounds(bounds.pad(0.2));
-  }
-}
-
-function renderClusterList(){
-  const wrap=document.getElementById('cluster-list');
-  wrap.innerHTML='';
-  groupByCluster().forEach((list,cid)=>{
-    const sumCarbon = list.reduce((s,p)=>s+(p.carbon||0),0);
-    const card = document.createElement('div');
-    card.className='cluster-card';
-    card.innerHTML = `
-      <div>
-        <b>Cluster ${cid}</b>
-        <span class="badge">${list.length} plots</span>
-        <div style="font-size:12px;color:#555">Residues: ${sumCarbon.toFixed(2)} t</div>
+    <!-- Decision table -->
+    <section class="card" style="margin-top:16px;">
+      <div class="head">Cluster screening table</div>
+      <div class="body" style="padding:0">
+        <div class="muted" style="padding:8px 12px">
+          Rules (ตัวอย่าง): <b>if &lt; 10 rai → no go</b>, <b>if &lt; 5 tons → no go</b>, <b>if &gt; 30 km → no go</b>, <b>if &gt; 500 THB/ton → no go</b>, <b>if emission &gt; Y → no go</b>
+        </div>
+        <table id="tbl">
+          <thead>
+            <tr>
+              <th style="min-width:110px">Cluster</th>
+              <th>Total fields (rai)</th>
+              <th>Agri‑waste available (ton)</th>
+              <th>Distance from our facility (km)</th>
+              <th>Time to cluster (hr)</th>
+              <th>Time spent (hr)</th>
+              <th>Energy used (kWh)</th>
+              <th>Cost (THB/ton)</th>
+              <th>Emission released (CO2e)</th>
+              <th>Decision to go</th>
+            </tr>
+          </thead>
+          <tbody id="tblBody"></tbody>
+        </table>
       </div>
-      <a href="cluster.html?cluster_id=${encodeURIComponent(cid)}">Open</a>
-    `;
-    wrap.appendChild(card);
-  });
-}
+    </section>
+  </main>
 
-// turf.js สำหรับ centroid
-</script>
-<script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
-<script>initMap();</script>
+  <footer>Built with Leaflet + Chart.js | Data source: Google Sheets (CSV)</footer>
+
+  <!-- libs -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+
+  <script>
+  /*
+   * =======================
+   *  Google Sheet structure
+   * =======================
+   * 1) KPIs sheet (1 row)
+   *    agri_waste_30d, fields_rai, farmers, co2e_prevented, time_hr_per_ton, time_pct_change
+   *
+   * 2) BAR sheet (time-series for next 30 days)
+   *    date, tons
+   *
+   * 3) PLOTS sheet (points)
+   *    plot_id, lat, lng, carbon, cluster_id, fields_rai, is_biochar  (is_biochar TRUE/FALSE)
+   *
+   *  step: File → Share → Publish to web → เลือก CSV แล้วเอา URL มาใส่ในตัวแปรด้านล่าง
+   */
+
+  // ======= CONFIG: ใส่ URL CSV จาก Google Sheets ที่นี่ =======
+  const KPIS_CSV  = ""; // ex. 'https://docs.google.com/spreadsheets/d/e/xxxx/pub?gid=0&single=true&output=csv'
+  const BAR_CSV   = "";
+  const PLOTS_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRUiJHnoc7oAWnWLxMuQ6BcFHtTjlDDgOtSfFrIuOryV-2pyDo9k_Bh2U9qqVSjjgLMGHGjkxozx5-f/pubhtml?gid=0&single=true";
+
+  // ======= CONSTANT (สามารถปรับได้) =======
+  const SPEED_KMH = 40;         // ใช้ประเมินเวลาเดินทาง
+  const ENERGY_KWH_PER_KM = 0.8;// ใช้ประเมินพลังงาน
+  const COST_THB_PER_KM = 15;   // สำหรับคำนวณ cost/ton
+  const EMISSION_KG_PER_KM = 0.25; // ตัวอย่าง factor CO2e/กม.
+  const EMISSION_LIMIT = 9999;  // เกณฑ์ Y (ตัวอย่าง ทำผ่านเสมอ)
+
+  // ======= DEMO DATA (ใช้เมื่อไม่ใส่ลิงก์ชีท) =======
+  const demoKPIs = { agri_waste_30d: 1420, fields_rai: 315, farmers: 128, co2e_prevented: 260, time_hr_per_ton: 1.8, time_pct_change: 7 };
+  const demoBAR = [
+    {date:'2025-02-01', tons: 45},{date:'2025-03-01', tons: 55},{date:'2025-04-01', tons: 52},
+    {date:'2025-05-01', tons: 58},{date:'2025-06-01', tons: 60},{date:'2025-07-01', tons: 33}
+  ];
+  const demoPlots = [
+    {plot_id:'Biochar Plant', lat:19.22956, lng:99.490782, carbon:0, cluster_id:'A', fields_rai:0, is_biochar:true},
+    {plot_id:'MJD001', lat:19.18492, lng:99.56857,  carbon:4.1, cluster_id:'A', fields_rai:12, is_biochar:false},
+    {plot_id:'MJD002', lat:19.18308, lng:99.56974,  carbon:3.9, cluster_id:'A', fields_rai:10, is_biochar:false},
+    {plot_id:'MJD003', lat:19.18147, lng:99.56686,  carbon:4.4, cluster_id:'A', fields_rai:9,  is_biochar:false},
+    {plot_id:'MJD004', lat:19.18441, lng:99.56497,  carbon:3.6, cluster_id:'A', fields_rai:11, is_biochar:false},
+    {plot_id:'MJD005', lat:19.18251, lng:99.56358,  carbon:4.2, cluster_id:'A', fields_rai:8,  is_biochar:false},
+    {plot_id:'MJD006', lat:19.18018, lng:99.56442,  carbon:4.0, cluster_id:'A', fields_rai:7,  is_biochar:false},
+    {plot_id:'MJD007', lat:19.17893, lng:99.56742,  carbon:3.7, cluster_id:'A', fields_rai:6,  is_biochar:false},
+    {plot_id:'MJD008', lat:19.18372, lng:99.56231,  carbon:4.5, cluster_id:'A', fields_rai:13, is_biochar:false},
+    {plot_id:'MJD009', lat:19.18067, lng:99.56113,  carbon:3.8, cluster_id:'A', fields_rai:9,  is_biochar:false},
+    {plot_id:'MJD010', lat:19.18624, lng:99.56934,  carbon:4.3, cluster_id:'A', fields_rai:10, is_biochar:false},
+
+    {plot_id:'B001',   lat:19.2501,  lng:99.6001, carbon:6.2, cluster_id:'B', fields_rai:12, is_biochar:false},
+    {plot_id:'B002',   lat:19.2510,  lng:99.6020, carbon:5.1, cluster_id:'B', fields_rai:9,  is_biochar:false},
+    {plot_id:'B003',   lat:19.2490,  lng:99.6030, carbon:4.8, cluster_id:'B', fields_rai:7,  is_biochar:false}
+  ];
+
+  // ======= STATE =======
+  let map, markerCluster, barChart;
+
+  // --------- utils ----------
+  function km(a,b){
+    return turf.distance(turf.point([a.lng,a.lat]), turf.point([b.lng,b.lat]), {units:'kilometers'});
+  }
+  function fmt(n,dec=0){
+    if(n==null || isNaN(n)) return '–';
+    return Number(n).toLocaleString(undefined,{maximumFractionDigits:dec,minimumFractionDigits:dec});
+  }
+
+  // --------- load CSV or demo ----------
+  async function loadCSV(url){
+    if(!url) return null;
+    return new Promise((resolve,reject)=>{
+      Papa.parse(url,{download:true,header:true,complete:r=>resolve(r.data),error:reject});
+    });
+  }
+
+  async function bootstrap(){
+    // 1) KPIs
+    let kpis = demoKPIs;
+    if(KPIS_CSV){
+      const rows = await loadCSV(KPIS_CSV);
+      if(rows && rows.length){
+        const r = rows[0];
+        kpis = {
+          agri_waste_30d:+r.agri_waste_30d,
+          fields_rai:+r.fields_rai,
+          farmers:+r.farmers,
+          co2e_prevented:+r.co2e_prevented,
+          time_hr_per_ton:+r.time_hr_per_ton,
+          time_pct_change:+r.time_pct_change
+        };
+      }
+    }
+    // render KPIs
+    document.getElementById('kpi_waste').textContent   = fmt(kpis.agri_waste_30d);
+    document.getElementById('kpi_fields').textContent   = fmt(kpis.fields_rai);
+    document.getElementById('kpi_farmers').textContent  = fmt(kpis.farmers);
+    document.getElementById('kpi_co2e').textContent     = fmt(kpis.co2e_prevented);
+    document.getElementById('kpi_time').textContent     = fmt(kpis.time_hr_per_ton,2);
+
+    // 2) Bar series
+    let series = demoBAR;
+    if(BAR_CSV){
+      const rows = await loadCSV(BAR_CSV);
+      if(rows && rows.length){
+        series = rows.map(r=>({date:r.date, tons:+r.tons})).filter(x=>!isNaN(x.tons));
+      }
+    }
+    drawBar(series);
+
+    // 3) Plots for map + table
+    let plots = demoPlots;
+    if(PLOTS_CSV){
+      const rows = await loadCSV(PLOTS_CSV);
+      if(rows && rows.length){
+        plots = rows.map(r=>({
+          plot_id:r.plot_id,
+          lat:+r.lat, lng:+r.lng,
+          carbon:+r.carbon,
+          cluster_id:r.cluster_id,
+          fields_rai:+(r.fields_rai||0),
+          is_biochar: String(r.is_biochar).toUpperCase()==='TRUE'
+        })).filter(p=>!isNaN(p.lat)&&!isNaN(p.lng));
+      }
+    }
+
+    initMap(plots);
+    fillDecisionTable(plots);
+  }
+
+  // --------- chart ----------
+  function drawBar(series){
+    const ctx = document.getElementById('barChart');
+    if(barChart) barChart.destroy();
+    barChart = new Chart(ctx,{
+      type:'bar',
+      data:{
+        labels: series.map(s=>new Date(s.date).toLocaleDateString()),
+        datasets:[{
+          label:'tons',
+          data: series.map(s=>s.tons)
+        }]
+      },
+      options:{
+        plugins:{legend:{display:false}},
+        scales:{y:{beginAtZero:true}}
+      }
+    });
+  }
+
+  // --------- map ----------
+  function initMap(plots){
+    map = L.map('map').setView([19.2, 99.56], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+    markerCluster = L.markerClusterGroup();
+    // add biochar plant first
+    const plant = plots.find(p=>p.is_biochar);
+    if(plant){
+      L.marker([plant.lat,plant.lng],{
+        title:'Biochar Plant',
+        icon:L.icon({iconUrl:'https://cdn-icons-png.flaticon.com/512/684/684908.png',iconSize:[30,30]})
+      }).addTo(map).bindPopup('<b>Biochar Plant</b>');
+    }
+    // normal plots
+    plots.filter(p=>!p.is_biochar).forEach(p=>{
+      const m = L.marker([p.lat,p.lng]).bindPopup(`<b>${p.plot_id}</b><br/>Cluster: ${p.cluster_id}<br/>Residues: ${fmt(p.carbon,1)} t`);
+      markerCluster.addLayer(m);
+    });
+    map.addLayer(markerCluster);
+    if(markerCluster.getLayers().length){
+      map.fitBounds(markerCluster.getBounds(),{padding:[20,20]});
+    }
+  }
+
+  // --------- decision table ----------
+  function groupByCluster(plots){
+    const plant = plots.find(p=>p.is_biochar);
+    const clusters = {};
+    plots.filter(p=>!p.is_biochar).forEach(p=>{
+      (clusters[p.cluster_id] ||= []).push(p);
+    });
+    return {plant, clusters};
+  }
+
+  function fillDecisionTable(plots){
+    const {plant, clusters} = groupByCluster(plots);
+    const tbody = document.getElementById('tblBody');
+    tbody.innerHTML = '';
+
+    Object.keys(clusters).sort().forEach(cid=>{
+      const pts = clusters[cid];
+      const totalFields = pts.reduce((s,p)=>s+(p.fields_rai||0),0);
+      const totalTons   = pts.reduce((s,p)=>s+(p.carbon||0),0);
+
+      // centroid for cluster
+      const fc = turf.featureCollection(pts.map(p=>turf.point([p.lng,p.lat])));
+      const cen = turf.centroid(fc);
+      const hub = {lat:cen.geometry.coordinates[1], lng:cen.geometry.coordinates[0]};
+
+      // distance from facility (plant) → hub
+      const distKm = plant ? km(plant, hub) : 0;
+      const timeToClusterHr = distKm / SPEED_KMH;
+
+      // rough time spent collecting (สมมติ 0.25 hr / ton)
+      const timeSpentHr = totalTons * 0.25;
+
+      const energyKWh = distKm * ENERGY_KWH_PER_KM;
+      const costTHBperTon = (distKm * COST_THB_PER_KM) / Math.max(1,totalTons);
+      const emission = distKm * EMISSION_KG_PER_KM; // kgCO2e
+
+      // decision rules (เหมือนข้อความในรูป)
+      const rules = [];
+      if(totalFields < 10) rules.push('fields < 10 rai');
+      if(totalTons < 5) rules.push('tons < 5');
+      if(distKm > 30) rules.push('distance > 30 km');
+      if(costTHBperTon > 500) rules.push('cost > 500');
+      if(emission > EMISSION_LIMIT) rules.push('emission > Y');
+
+      const go = rules.length===0;
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><b>Cluster ${cid}</b></td>
+        <td>${fmt(totalFields)}</td>
+        <td>${fmt(totalTons,1)}</td>
+        <td>${fmt(distKm,2)}</td>
+        <td>${fmt(timeToClusterHr,2)}</td>
+        <td>${fmt(timeSpentHr,2)}</td>
+        <td>${fmt(energyKWh,2)}</td>
+        <td>${fmt(costTHBperTon,2)}</td>
+        <td>${fmt(emission,2)}</td>
+        <td>${go ? '<span class="pill">Yes</span>' : '<span class="pill red">No</span><div class="muted">'+rules.join(', ')+'</div>'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // go!
+  bootstrap();
+  </script>
 </body>
 </html>
