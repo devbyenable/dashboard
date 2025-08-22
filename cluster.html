@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Cluster Focus Route (Parking on road & walk to Subs)</title>
+  <title>Cluster Focus Route (Parking direct to Subs)</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
   <style>
     :root{--left:#b6e89e}
@@ -29,7 +29,7 @@
   </style>
 </head>
 <body>
-<header>หน้า Map → สมนึกถึงคลม Cluster <span id="clusterTitle"></span> (Parking บนถนน & เดินไป Sub)</header>
+<header>หน้า Map → สมนึกถึงคลม Cluster <span id="clusterTitle"></span> (Parking → Sub เป็นเส้นตรง)</header>
 
 <main class="layout">
   <!-- LEFT KPIs -->
@@ -67,8 +67,8 @@
 /* =======================
    CONFIG
    ======================= */
-const TRUCK_SPEED_KMH   = 35;   // สำหรับประเมินเวลา (ถ้า OSRM ไม่มี duration)
-const WALK_SPEED_KMH    = 4;    // เดินเท้า
+const TRUCK_SPEED_KMH   = 35;   // สำหรับประเมินเวลาเมื่อ OSRM ไม่คืน duration
+const WALK_SPEED_KMH    = 4;    // สำหรับคิดเวลาเดิน (แม้จะวาดเส้นตรง)
 const LOAD_MIN_PER_STOP = 6;
 const SMALL_CAP_TON     = 2;
 
@@ -100,7 +100,7 @@ function km(a,b){
 }
 function fmt(n,dec=0){ return Number(n).toLocaleString(undefined,{minimumFractionDigits:dec,maximumFractionDigits:dec}); }
 
-/* OSRM helpers */
+/* ===== OSRM helpers (เฉพาะสำหรับเส้นของรถบรรทุก) ===== */
 async function osrmNearest(lat,lng){
   const url = `https://router.project-osrm.org/nearest/v1/driving/${lng},${lat}`;
   try{ const r = await fetch(url); const j = await r.json();
@@ -123,20 +123,17 @@ async function osrmRoute(profile, from, to){
       return {coords, km:distKm, hr:durHr, by:'road'};
     }
   }catch(e){}
-  // fallback: straight line
   const distKm = km(from,to);
-  return {coords:[[from.lat,from.lng],[to.lat,to.lng]], km:distKm, hr: distKm/(profile==='foot'?WALK_SPEED_KMH:TRUCK_SPEED_KMH), by:'direct'};
+  return {coords:[[from.lat,from.lng],[to.lat,to.lng]], km:distKm, hr: distKm/TRUCK_SPEED_KMH, by:'direct'};
 }
 
 /* ====== เลือก Parking: snap บนถนน & ใกล้ Sub มากสุด ====== */
 async function pickBestParking(subs, centroid){
-  // ผู้ท้าชิง = centroid + (สุ่ม subs สูงสุด 8 จุด)
   const candidates = [centroid, ...subs.slice(0,8).map(s=>({lat:s.lat,lng:s.lng}))];
   let best = null, bestScore = Infinity;
 
   for(const c of candidates){
     const snapped = await osrmNearest(c.lat, c.lng);
-    // คะแนน = ค่าเฉลี่ยระยะตรงไปทุก Sub
     const score = subs.reduce((s,p)=>s+km(snapped,{lat:p.lat,lng:p.lng}),0)/subs.length;
     if(score < bestScore){ bestScore = score; best = snapped; }
   }
@@ -174,14 +171,16 @@ const orgIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   const line2 = L.polyline(r2.coords, {color:'#1d4ed8',weight:5,opacity:0.95,dashArray:'8,6'}).addTo(map)
                  .bindPopup(`EV truck: Parking → End<br/>${fmt(r2.km,2)} กม. (${r2.by})`);
 
-  // 4) Parking → Sub (เดินเท้า หากหาเส้นทางไม่ได้จะวาดเส้นตรง)
+  // 4) Parking → Sub (เส้นตรง ไป‑กลับ)
   let walkTotalKm = 0;
   const boundsPts = [...r1.coords, ...r2.coords, [plant.lat,plant.lng], [endPoint.lat,endPoint.lng], [parking.lat,parking.lng]];
   for(const p of data.plots){
-    const res = await osrmRoute('foot', parking, {lat:p.lat,lng:p.lng});
-    walkTotalKm += res.km*2; // ไป-กลับ
-    L.polyline(res.coords, {color:'#f59e0b',weight:4,opacity:0.9}).addTo(map)
-      .bindPopup(`Walk: Parking → ${p.plot_id}<br/>ไป‑กลับ ~ ${fmt(res.km*2,2)} กม. (${res.by})`);
+    // คำนวณระยะตรง
+    const dist = km(parking, {lat:p.lat,lng:p.lng});
+    walkTotalKm += dist * 2; // ไป-กลับ
+    // วาดเส้นตรง
+    L.polyline([[parking.lat,parking.lng],[p.lat,p.lng]], {color:'#f59e0b',weight:4,opacity:0.9}).addTo(map)
+      .bindPopup(`Direct: Parking → ${p.plot_id}<br/>ไป‑กลับ ~ ${fmt(dist*2,2)} กม.`);
     L.marker([p.lat,p.lng], {icon:orgIcon}).addTo(map)
       .bindPopup(`<b>${p.plot_id}</b><br/>loading time: ${LOAD_MIN_PER_STOP} min`);
     boundsPts.push([p.lat,p.lng]);
@@ -190,7 +189,7 @@ const orgIcon  = L.divIcon({className:'', html:'<span style="display:inline-bloc
   // KPI รวม
   const truckKm = r1.km + r2.km;
   const truckHr = (r1.hr||r1.km/TRUCK_SPEED_KMH) + (r2.hr||r2.km/TRUCK_SPEED_KMH);
-  const walkHr  = walkTotalKm / WALK_SPEED_KMH;
+  const walkHr  = walkTotalKm / WALK_SPEED_KMH;    // ใช้ความเร็วเดินเพื่อประเมินเวลา แม้เป็นเส้นตรง
   const loadHr  = (data.plots.length * LOAD_MIN_PER_STOP)/60;
   const totalHr = truckHr + walkHr + loadHr;
   const rounds  = Math.max(1, Math.ceil((data.total_residues||0)/SMALL_CAP_TON));
