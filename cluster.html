@@ -9,7 +9,7 @@
     :root{--left:#b6e89e}
     *{box-sizing:border-box}
     body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;color:#111}
-    header{padding:14px 18px;font-weight:600;color:#e11d48}
+    header{padding:14px 18px;font-weight:700;color:#000000}
     main{max-width:1320px;margin:0 auto;padding:0 16px 30px}
     .layout{display:grid;grid-template-columns:260px 1fr 280px;gap:18px}
     .kbox{background:var(--left);border-radius:26px;padding:20px 14px;text-align:center;margin-bottom:18px}
@@ -29,7 +29,7 @@
   </style>
 </head>
 <body>
-<header>หน้า Map → โฟกัส Cluster <span id="clusterTitle"></span> (Plots = Pins, Hub = Centroid)</header>
+<header><span id="clusterTitle"></span></header>
 
 <main class="layout">
   <!-- LEFT KPIs -->
@@ -49,8 +49,8 @@
   <aside>
     <div class="legend">
       <div class="lgrow"><span class="dot red"></span><div>Starting point & End point</div></div>
-      <div class="lgrow"><span class="dot blue"></span><div>Parking point (snap บนถนน)</div></div>
-      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub = centroid ของ cluster</div></div>
+      <div class="lgrow"><span class="dot blue"></span><div>Parking point - for EV truck</div></div>
+      <div class="lgrow"><span class="dot org"></span><div>Sub‑logistic hub - for small vehicle</div></div>
       <div style="margin-top:6px;font-size:13px;color:#444">
         เส้นย่อยเป็นเส้นตรง: <b>Parking→Hub</b> และ <b>Hub→Plot</b>
       </div>
