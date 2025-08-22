@@ -264,9 +264,65 @@
 
   // --------- map ----------
   function initMap(plots){
-    map = L.map('map').setView([19.2, 99.56], 12);
+    <!-- map = L.map('map').setView([19.2, 99.56], 12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
-    markerCluster = L.markerClusterGroup();
+    markerCluster = L.markerClusterGroup(); -->
+
+    // 1) สร้างแผนที่ (เหมือนเดิม)
+  const map = L.map('map').setView([19.2, 99.56], 13);
+
+  // 2) กำหนด base layers
+  const osmStreets = L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+      attribution: '© OpenStreetMap contributors'
+    }
+  );
+
+  // ภาพดาวเทียมฟรีจาก Esri
+  const esriSatellite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    {
+      attribution:
+        'Imagery © Esri, Maxar, Earthstar Geographics, GIS User Community'
+    }
+  );
+
+  // 3) ชั้น Label โปร่งใส (ซ้อนบนภาพดาวเทียมให้เห็นชื่อเมือง/เส้นทาง)
+  const esriLabels = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+    {
+      attribution: 'Labels © Esri',
+      opacity: 0.9
+    }
+  );
+
+  // 4) กำหนดค่าเริ่มต้นให้เป็น “Satellite + Labels”
+  esriSatellite.addTo(map);
+  esriLabels.addTo(map);
+
+  // (ถ้าชอบถนนป้ายชัดขึ้น เพิ่มชั้น Reference/World_Transportation ก็ได้)
+  // const esriRoadRef = L.tileLayer(
+  //  'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}',
+  //  { attribution:'© Esri', opacity: 0.9 }
+  // ).addTo(map);
+
+  // 5) กล่องสลับแผนที่ (ผู้ใช้เลือกได้)
+  L.control.layers(
+    {
+      'OSM Streets': osmStreets,
+      'Esri Satellite': esriSatellite
+    },
+    {
+      'Labels (Esri)': esriLabels
+      // ,'Road Ref (Esri)': esriRoadRef
+    },
+    { collapsed: true }
+  ).addTo(map);
+
+  // *** ที่เหลือ (MarkerCluster / Routing OSRM / ปุ่มต่างๆ) ใช้โค้ดเดิมได้เลย ***
+      
+    
     // add biochar plant first
     const plant = plots.find(p=>p.is_biochar);
     if(plant){
